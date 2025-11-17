@@ -66,7 +66,6 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
     
     Ray shadowRay = hit.getShadowRay(lightPos);
     
-    float shadowColor = 0.0f;
 
     auto reflec = hit.material.reflectivity;
     directColor = ndotL * hit.material.color;
@@ -74,16 +73,20 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
     if (depth > 0 && hit.material.reflectivity > 0.0f) {
         const Ray refr = hit.getReflectedRay();
         reflectedColor = reflec * traceRay(refr, scene, depth - 1);
+    } else {
+        reflectedColor = Color();
     }
     
     auto trans = hit.material.transparency;
     if (depth > 0 && hit.material.transparency > 0.0f) {
         const Ray refr = hit.getRefractedRay();
         refractedColor = trans * traceRay(refr, scene, depth - 1);
+    } else {
+        refractedColor = Color();
     }
     
     if (scene.intersect(shadowRay, shadow))
-        directColor *= shadowColor;
+        directColor = Color();
     
     c = (1 - reflec - trans) * directColor + reflectedColor + refractedColor;
     return c;
@@ -158,57 +161,49 @@ int main() {
     int depth = 3;
     std::cout << "Rendering... ";
     clock_t start = clock();
-    int ssm = 3, ssn = 3;
+
+    const int samples_per_side = 3;
+    const int samples_per_pixel = samples_per_side * samples_per_side;
+
+
     for (int j = 0; j < imageHeight; ++j) {
         for (int i = 0; i < imageWidth; ++i) {
-            float tot_pixel_r = 0.0;
-            float tot_pixel_g = 0.0;
-            float tot_pixel_b = 0.0;
-        
-            for (int m = 0; m < ssm; ++m) {
-                float lower_bound_row = (m) / ssm;
-                float upper_bound_row = (m+1) / ssm;
-                for (int n = 0; n < ssn; ++n) {
-                    Color pixel;
+
+            // Per Pixel Super Sampling
+            Color sum = Color(0.0f, 0.0f, 0.0f);
+            for (int m = 0; m < samples_per_side; ++m) {
+                float row_min = float(m)     / float(samples_per_side);
+                float row_max = float(m + 1) / float(samples_per_side);
+                for (int n = 0; n < samples_per_side; ++n) {
                     
-                    float lower_bound_col = n / ssn;
-                    float upper_bound_col = (n+1) / ssn;
+                    float col_min = float(n)     / float(samples_per_side);
+                    float col_max = float(n + 1) / float(samples_per_side);
                         
                     // Get center of pixel coordinate
                     //float cx = ((float)i) + 0.5f;
                     //float cy = ((float)j) + 0.5f;
                     
-                    float u_r = uniform();
-                    float u_c = uniform();
+                    const float rand_row = uniform();
+                    const float rand_col = uniform();
                     
-                    float u_r_bounded = (1 - u_r)*lower_bound_row + u_r*upper_bound_row;
-                    float u_c_bounded = (1 - u_c)*lower_bound_col + u_c*upper_bound_col;
+                    const float x_offset = (1.0f - rand_col) * col_min + rand_col * col_max;
+                    const float y_offset = (1.0f - rand_row) * row_min + rand_row * row_max;
                     
-                    float cx = ((float)i) + u_r_bounded;
-                    float cy = ((float)j) + u_c_bounded;
+                    const float cx = float(i) + x_offset;
+                    const float cy = float(j) + y_offset;
 
                     // Get a ray and trace it
-                    Ray r = camera.getRay(cx, cy);
-                    pixel = traceRay(r, scene, depth);
-                    
-                    
-                    
-                    tot_pixel_r += pixel[0];
-                    tot_pixel_g += pixel[1];
-                    tot_pixel_b += pixel[2];
+                    const Ray ray      = camera.getRay(cx, cy);
+                    const Color sample = traceRay(ray, scene, depth);
+                    sum += sample;
 
-                    // Write pixel value to image
-                    //writeColor((j * imageWidth + i) * numChannels, pixel, pixels);
                 }
             }
-            int nr_samples = ssm * ssn;
-            float mean_pixel_r = tot_pixel_r / nr_samples;
-            float mean_pixel_g = tot_pixel_g / nr_samples;
-            float mean_pixel_b = tot_pixel_b / nr_samples;
+   
+            const float inv_scale = 1.0f / float(samples_per_pixel);
+            const Color pixel = sum * inv_scale;
             
-            Color sspixel = Vec3(mean_pixel_r, mean_pixel_g, mean_pixel_b);
-            
-            writeColor((j * imageWidth + i) * numChannels, sspixel, pixels);
+            writeColor((j * imageWidth + i) * numChannels, pixel, pixels);
         }
     }
 
