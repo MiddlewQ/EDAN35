@@ -47,6 +47,10 @@ CMakeScripts/
 cmake_install.cmake
 build/
 
+# IDK xd
+.DS_STORE
+
+
 #Xcode
 *.xcodeproj/
 *.xcworkspace/
