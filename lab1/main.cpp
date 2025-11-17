@@ -54,19 +54,38 @@ void writeColor(int index, Vec3 p, uint8_t *pixels) {
 Color traceRay(const Ray &r, Scene scene, int depth) {
     Color c, directColor, reflectedColor, refractedColor;
     if (depth < 0) return c;
-
+    
     Intersection hit, shadow;
     if (!scene.intersect(r, hit)) return Color(0.0f, 0.0f, 0.0f); // Background color
+    
 
     const Vec3 lightPos(0.0f, 30.0f, -5.0f);
     Vec3 lightDir = lightPos - hit.position;
     lightDir.normalize();
-    auto const NdotL = clamp(hit.normal * lightDir, 0.0f, 1.0f);
+    float ndotL = clamp(hit.normal * lightDir, 0.0f , 1.0f);
+    
+    Ray shadowRay = hit.getShadowRay(lightPos);
+    
+    float shadowColor = 0.0f;
 
-    directColor = hit.material.color * NdotL;
-
-    c = directColor;
-
+    auto reflec = hit.material.reflectivity;
+    directColor = ndotL * hit.material.color;
+    
+    if (depth > 0 && hit.material.reflectivity > 0.0f) {
+        const Ray refr = hit.getReflectedRay();
+        reflectedColor = reflec * traceRay(refr, scene, depth - 1);
+    }
+    
+    auto trans = hit.material.transparency;
+    if (depth > 0 && hit.material.transparency > 0.0f) {
+        const Ray refr = hit.getRefractedRay();
+        refractedColor = trans * traceRay(refr, scene, depth - 1);
+    }
+    
+    if (scene.intersect(shadowRay, shadow))
+        directColor *= shadowColor;
+    
+    c = (1 - reflec - trans) * directColor + reflectedColor + refractedColor;
     return c;
 }
 
@@ -139,21 +158,57 @@ int main() {
     int depth = 3;
     std::cout << "Rendering... ";
     clock_t start = clock();
+    int ssm = 3, ssn = 3;
     for (int j = 0; j < imageHeight; ++j) {
         for (int i = 0; i < imageWidth; ++i) {
+            float tot_pixel_r = 0.0;
+            float tot_pixel_g = 0.0;
+            float tot_pixel_b = 0.0;
+        
+            for (int m = 0; m < ssm; ++m) {
+                float lower_bound_row = (m) / ssm;
+                float upper_bound_row = (m+1) / ssm;
+                for (int n = 0; n < ssn; ++n) {
+                    Color pixel;
+                    
+                    float lower_bound_col = n / ssn;
+                    float upper_bound_col = (n+1) / ssn;
+                        
+                    // Get center of pixel coordinate
+                    //float cx = ((float)i) + 0.5f;
+                    //float cy = ((float)j) + 0.5f;
+                    
+                    float u_r = uniform();
+                    float u_c = uniform();
+                    
+                    float u_r_bounded = (1 - u_r)*lower_bound_row + u_r*upper_bound_row;
+                    float u_c_bounded = (1 - u_c)*lower_bound_col + u_c*upper_bound_col;
+                    
+                    float cx = ((float)i) + u_r_bounded;
+                    float cy = ((float)j) + u_c_bounded;
 
-            Color pixel;
+                    // Get a ray and trace it
+                    Ray r = camera.getRay(cx, cy);
+                    pixel = traceRay(r, scene, depth);
+                    
+                    
+                    
+                    tot_pixel_r += pixel[0];
+                    tot_pixel_g += pixel[1];
+                    tot_pixel_b += pixel[2];
 
-            // Get center of pixel coordinate
-            float cx = ((float)i) + 0.5f;
-            float cy = ((float)j) + 0.5f;
-
-            // Get a ray and trace it
-            Ray r = camera.getRay(cx, cy);
-            pixel = traceRay(r, scene, depth);
-
-            // Write pixel value to image
-            writeColor((j * imageWidth + i) * numChannels, pixel, pixels);
+                    // Write pixel value to image
+                    //writeColor((j * imageWidth + i) * numChannels, pixel, pixels);
+                }
+            }
+            int nr_samples = ssm * ssn;
+            float mean_pixel_r = tot_pixel_r / nr_samples;
+            float mean_pixel_g = tot_pixel_g / nr_samples;
+            float mean_pixel_b = tot_pixel_b / nr_samples;
+            
+            Color sspixel = Vec3(mean_pixel_r, mean_pixel_g, mean_pixel_b);
+            
+            writeColor((j * imageWidth + i) * numChannels, sspixel, pixels);
         }
     }
 
