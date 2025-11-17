@@ -61,8 +61,9 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
     const Vec3 lightPos(0.0f, 30.0f, -5.0f);
     Vec3 lightDir = lightPos - hit.position;
     lightDir.normalize();
+    auto const NdotL = clamp(hit.normal * lightDir, 0.0f, 1.0f);
 
-    directColor = Color(1.0f, 1.0f, 1.0f);
+    directColor = hit.material.color * NdotL;
 
     c = directColor;
 
@@ -106,26 +107,26 @@ int main() {
     };
 
     // TODO: Uncomment to render floor triangles
-    // scene.push(Triangle(&vertices[0], whiteDiffuse)); // Floor 1
-    // scene.push(Triangle(&vertices[3], whiteDiffuse)); // Floor 2
+    scene.push(Triangle(&vertices[0], whiteDiffuse)); // Floor 1
+    scene.push(Triangle(&vertices[3], whiteDiffuse)); // Floor 2
 
     // TODO: Uncomment to render Cornell box
-    // scene.push(Triangle(&vertices[6], whiteDiffuse));  // Back wall 1
-    // scene.push(Triangle(&vertices[9], whiteDiffuse));  // Back wall 2
-    // scene.push(Triangle(&vertices[12], whiteDiffuse)); // Ceiling 1
-    // scene.push(Triangle(&vertices[15], whiteDiffuse)); // Ceiling 2
-    // scene.push(Triangle(&vertices[18], redDiffuse));   // Red wall 1
-    // scene.push(Triangle(&vertices[21], redDiffuse));   // Red wall 2
-    // scene.push(Triangle(&vertices[24], greenDiffuse)); // Green wall 1
-    // scene.push(Triangle(&vertices[27], greenDiffuse)); // Green wall 2
+    scene.push(Triangle(&vertices[6], whiteDiffuse));  // Back wall 1
+    scene.push(Triangle(&vertices[9], whiteDiffuse));  // Back wall 2
+    scene.push(Triangle(&vertices[12], whiteDiffuse)); // Ceiling 1
+    scene.push(Triangle(&vertices[15], whiteDiffuse)); // Ceiling 2
+    scene.push(Triangle(&vertices[18], redDiffuse));   // Red wall 1
+    scene.push(Triangle(&vertices[21], redDiffuse));   // Red wall 2
+    scene.push(Triangle(&vertices[24], greenDiffuse)); // Green wall 1
+    scene.push(Triangle(&vertices[27], greenDiffuse)); // Green wall 2
 
     // TODO: Uncomment to render reflective spheres
-    // scene.push(Sphere(Vec3(7.0f, 3.0f, 0.0f), 3.0f, yellowReflective));
-    // scene.push(Sphere(Vec3(9.0f, 10.0f, 0.0f), 3.0f, yellowReflective));
+    scene.push(Sphere(Vec3(7.0f, 3.0f, 0.0f), 3.0f, yellowReflective));
+    scene.push(Sphere(Vec3(9.0f, 10.0f, 0.0f), 3.0f, yellowReflective));
 
     // TODO: Uncomment to render refractive spheres
-    // scene.push(Sphere(Vec3(-7.0f, 3.0f, 0.0f), 3.0f, transparent));
-    // scene.push(Sphere(Vec3(-9.0f, 10.0f, 0.0f), 3.0f, transparent));
+    scene.push(Sphere(Vec3(-7.0f, 3.0f, 0.0f), 3.0f, transparent));
+    scene.push(Sphere(Vec3(-9.0f, 10.0f, 0.0f), 3.0f, transparent));
 
     // Setup camera
     Vec3 eye(0.0f, 10.0f, 30.0f);
