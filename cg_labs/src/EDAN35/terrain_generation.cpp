@@ -43,13 +43,10 @@ edan35::TerrainGenerator::~TerrainGenerator()
 void
 edan35::TerrainGenerator::run()
 {
-	// Load the sphere geometry
-	auto const shape = parametric_shapes::createCircleRing(2.0f, 0.75f, 40u, 4u);
-	if (shape.vao == 0u)
-		return;
 
 	// Set up the camera
-	mCamera.mWorld.SetTranslate(glm::vec3(0.0f, 1.0f, 9.0f));
+	mCamera.mWorld.SetTranslate(glm::vec3(-10.0f, 6.5f, -10.0f));
+	mCamera.mWorld.LookAt(glm::vec3(0.0f));
 	mCamera.mMouseSensitivity = glm::vec2(0.003f);
 	mCamera.mMovementSpeed = glm::vec3(3.0f); // 3 m/s => 10.8 km/h
 
@@ -111,19 +108,20 @@ edan35::TerrainGenerator::run()
 		};
 
 
-	auto circle_rings = Node();
-	circle_rings.set_geometry(shape);
-	circle_rings.set_program(&fallback_shader, set_uniforms);
-	TRSTransformf& circle_rings_transform_ref = circle_rings.get_transform();
+	//! TODO: Create Geometry
+	auto const terrain_quad = parametric_shapes::createQuad(100.0f, 100.0f, 1000u, 1000u);
+	auto terrain = Node();
+	terrain.set_geometry(terrain_quad);
+	terrain.set_program(&fallback_shader, set_uniforms);
+	TRSTransformf& circle_rings_transform_ref = terrain.get_transform();
 
 
-	//! \todo Create a tesselated sphere and a tesselated torus
 
 
 	glClearDepthf(1.0f);
 	glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 	glEnable(GL_DEPTH_TEST);
-
+	glEnable(GL_CULL_FACE);
 
 	auto lastTime = std::chrono::high_resolution_clock::now();
 
@@ -178,6 +176,14 @@ edan35::TerrainGenerator::run()
 		bonobo::changePolygonMode(polygon_mode);
 
 
+		// Render Terrain
+		terrain.render(mCamera.GetWorldToClipMatrix());
+
+
+
+
+
+
 
 		bool const opened = ImGui::Begin("Scene Controls", nullptr, ImGuiWindowFlags_None);
 		if (opened) {
@@ -188,9 +194,8 @@ edan35::TerrainGenerator::run()
 			bonobo::uiSelectPolygonMode("Polygon mode", polygon_mode);
 			auto selection_result = program_manager.SelectProgram("Shader", program_index);
 			if (selection_result.was_selection_changed) {
-				circle_rings.set_program(selection_result.program, set_uniforms);
+				terrain.set_program(selection_result.program, set_uniforms);
 			}
-			ImGui::Separator();
 			ImGui::Separator();
 			ImGui::Checkbox("Show basis", &show_basis);
 			ImGui::SliderFloat("Basis thickness scale", &basis_thickness_scale, 0.0f, 100.0f);

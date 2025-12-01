@@ -22,45 +22,55 @@ parametric_shapes::createQuad(float const width, float const height,
 	auto tangents = std::vector<glm::vec3>(vertices_nb);
 	auto binormals = std::vector<glm::vec3>(vertices_nb);
 
-	auto const delta_vertical = height / static_cast<float>(vertical_split_count);
-	auto const delta_horizontal = width / static_cast<float>(horizontal_split_count);
+	auto const delta_z = height / static_cast<float>(vertical_split_count);
+	auto const delta_x = width / static_cast<float>(horizontal_split_count);
 
 	unsigned index = 0u;
-	for (unsigned z = 0; z < horizontal_split_count + 1; ++z) {
-		float z_pos = delta_vertical * z;
-		for (unsigned x = 0; x < vertical_split_count + 1; ++x) {
-			float x_pos = delta_horizontal * x;
+	for (unsigned z = 0; z <= horizontal_split_count; ++z) {
+		float z_pos = delta_z * z;
+		for (unsigned x = 0; x <= vertical_split_count; ++x) {
+			float x_pos = delta_x * x;
 			index = z * (horizontal_split_count + 1) + x;
 
 			vertices[index] = glm::vec3(x_pos, 0.0f, z_pos);
-
 			tangents[index] = glm::vec3(1.0f, 0.0f, 0.0f);
 			binormals[index] = glm::vec3(0.0f, 0.0f, 1.0f);
 			normals[index] = glm::vec3(0.0f, 1.0f, 0.0f);
 
-			texcoords[index] = glm::vec3(static_cast<float>(z) / (static_cast<float>(horizontal_split_count)),
+			texcoords[index] = glm::vec3(
+				static_cast<float>(z) / (static_cast<float>(horizontal_split_count)),
 				static_cast<float>(x) / (static_cast<float>(vertical_split_count)),
-				0.0f);
+				0.0f
+			);
 
 		}
 	}
 	auto index_sets = std::vector<glm::uvec3>(2 * horizontal_split_count * vertical_split_count);
 
-	auto get_vertex_idx = [&vertical_split_count](auto x, auto z) {
-		return z * (vertical_split_count + 1) + x;
+	auto get_vertex_idx = [&horizontal_split_count](auto x, auto z) {
+		return z * (horizontal_split_count + 1) + x;
 		};
 
 
 	index = 0u;
 	for (unsigned z = 0; z < horizontal_split_count; ++z) {
 		for (unsigned x = 0; x < vertical_split_count; ++x) {
-			index_sets[index] = glm::uvec3(get_vertex_idx(x, z), get_vertex_idx(x + 1, z + 1), get_vertex_idx(x, z + 1));
+			index_sets[index] = glm::uvec3(
+				get_vertex_idx(x, z), // a
+				get_vertex_idx(x, z + 1), // c
+				get_vertex_idx(x + 1, z + 1)  // d
+			);
 			++index;
 
-			index_sets[index] = glm::uvec3(get_vertex_idx(x, z), get_vertex_idx(x + 1, z), get_vertex_idx(x + 1, z + 1));
+			index_sets[index] = glm::uvec3(
+				get_vertex_idx(x, z), // a
+				get_vertex_idx(x + 1, z + 1), // d
+				get_vertex_idx(x + 1, z)  // b
+			);
 			++index;
 		}
 	}
+
 
 	bonobo::mesh_data data;
 	if (horizontal_split_count < 1 || vertical_split_count < 1) {
