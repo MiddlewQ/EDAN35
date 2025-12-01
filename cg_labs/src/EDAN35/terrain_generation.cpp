@@ -110,21 +110,6 @@ edan35::TerrainGenerator::run()
 		glUniform3fv(glGetUniformLocation(program, "light_position"), 1, glm::value_ptr(light_position));
 		};
 
-	// Set the default tensions value; it can always be changed at runtime
-	// through the "Scene Controls" window.
-	float catmull_rom_tension = 0.0f;
-
-	// Set whether the default interpolation algorithm should be the linear one;
-	// it can always be changed at runtime through the "Scene Controls" window.
-	bool use_linear = true;
-
-	// Set whether to interpolate the position of an object or not; it can
-	// always be changed at runtime through the "Scene Controls" window.
-	bool interpolate = true;
-
-	// Set whether to show the control points or not; it can always be changed
-	// at runtime through the "Scene Controls" window.
-	bool show_control_points = true;
 
 	auto circle_rings = Node();
 	circle_rings.set_geometry(shape);
@@ -138,27 +123,6 @@ edan35::TerrainGenerator::run()
 	glClearDepthf(1.0f);
 	glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 	glEnable(GL_DEPTH_TEST);
-
-
-	auto const control_point_sphere = parametric_shapes::createSphere(0.1f, 10u, 10u);
-	std::array<glm::vec3, 9> control_point_locations = {
-		glm::vec3(0.0f,  0.0f,  0.0f),
-		glm::vec3(1.0f,  1.8f,  1.0f),
-		glm::vec3(2.0f,  1.2f,  2.0f),
-		glm::vec3(3.0f,  3.0f,  3.0f),
-		glm::vec3(3.0f,  0.0f,  3.0f),
-		glm::vec3(-2.0f, -1.0f,  3.0f),
-		glm::vec3(-3.0f, -3.0f, -3.0f),
-		glm::vec3(-2.0f, -1.2f, -2.0f),
-		glm::vec3(-1.0f, -1.8f, -1.0f)
-	};
-	std::array<Node, control_point_locations.size()> control_points;
-	for (std::size_t i = 0; i < control_point_locations.size(); ++i) {
-		auto& control_point = control_points[i];
-		control_point.set_geometry(control_point_sphere);
-		control_point.set_program(&diffuse_shader, set_uniforms);
-		control_point.get_transform().SetTranslate(control_point_locations[i]);
-	}
 
 
 	auto lastTime = std::chrono::high_resolution_clock::now();
@@ -214,27 +178,6 @@ edan35::TerrainGenerator::run()
 		bonobo::changePolygonMode(polygon_mode);
 
 
-		if (interpolate) {
-			//! \todo Interpolate the movement of a shape between various
-			//!        control points.
-			if (use_linear) {
-				//! \todo Compute the interpolated position
-				//!       using the linear interpolation.
-			}
-			else {
-				//! \todo Compute the interpolated position
-				//!       using the Catmull-Rom interpolation;
-				//!       use the `catmull_rom_tension`
-				//!       variable as your tension argument.
-			}
-		}
-
-		circle_rings.render(mCamera.GetWorldToClipMatrix());
-		if (show_control_points) {
-			for (auto const& control_point : control_points) {
-				control_point.render(mCamera.GetWorldToClipMatrix());
-			}
-		}
 
 		bool const opened = ImGui::Begin("Scene Controls", nullptr, ImGuiWindowFlags_None);
 		if (opened) {
@@ -248,10 +191,6 @@ edan35::TerrainGenerator::run()
 				circle_rings.set_program(selection_result.program, set_uniforms);
 			}
 			ImGui::Separator();
-			ImGui::Checkbox("Show control points", &show_control_points);
-			ImGui::Checkbox("Enable interpolation", &interpolate);
-			ImGui::Checkbox("Use linear interpolation", &use_linear);
-			ImGui::SliderFloat("Catmull-Rom tension", &catmull_rom_tension, 0.0f, 1.0f);
 			ImGui::Separator();
 			ImGui::Checkbox("Show basis", &show_basis);
 			ImGui::SliderFloat("Basis thickness scale", &basis_thickness_scale, 0.0f, 100.0f);
