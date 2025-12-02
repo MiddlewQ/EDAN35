@@ -102,6 +102,23 @@ edan35::TerrainGenerator::run()
 	if (texcoord_shader == 0u)
 		LogError("Failed to load texcoord shader");
 
+	GLuint water_shader = 0u;
+	program_manager.CreateAndRegisterProgram("Water coords",
+		{ { ShaderType::vertex, "EDAF80/water.vert" },
+	 	  { ShaderType::fragment, "EDAF80/water.frag"} },
+		water_shader);
+	if (water_shader == 0u)
+		LogError("Failed to load water shader");
+
+	GLuint terrain_shader = 0u;
+	program_manager.CreateAndRegisterProgram("Terrian coords",
+		{ { ShaderType::vertex, "EDAN35/terrain.vert" },
+		  { ShaderType::fragment, "EDAN35/terrain.frag"} },
+		terrain_shader);
+	if (terrain_shader == 0u)
+		LogError("Failed to load water shader");
+
+
 	auto const light_position = glm::vec3(-2.0f, 4.0f, 2.0f);
 	auto const set_uniforms = [&light_position](GLuint program) {
 		glUniform3fv(glGetUniformLocation(program, "light_position"), 1, glm::value_ptr(light_position));
