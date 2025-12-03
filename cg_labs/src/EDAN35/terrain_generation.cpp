@@ -118,7 +118,6 @@ edan35::TerrainGenerator::run()
 	if (terrain_shader == 0u)
 		LogError("Failed to load water shader");
 
-
 	auto const light_position = glm::vec3(-2.0f, 4.0f, 2.0f);
 	auto const set_uniforms = [&light_position](GLuint program) {
 		glUniform3fv(glGetUniformLocation(program, "light_position"), 1, glm::value_ptr(light_position));
@@ -126,11 +125,11 @@ edan35::TerrainGenerator::run()
 
 
 	//! TODO: Create Geometry
-	auto const terrain_quad = parametric_shapes::createQuad(100.0f, 100.0f, 1000u, 1000u);
+	auto const terrain_quad = parametric_shapes::createQuad(10.0f, 10.0f, 1000u, 1000u);
 	auto terrain = Node();
 	terrain.set_geometry(terrain_quad);
-	terrain.set_program(&fallback_shader, set_uniforms);
-	TRSTransformf& circle_rings_transform_ref = terrain.get_transform();
+	terrain.set_program(&terrain_shader, set_uniforms);
+	TRSTransformf& terrain_transform_ref = terrain.get_transform();
 
 
 
