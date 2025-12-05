@@ -43,8 +43,7 @@ void main()
 	vec3 B = normalize(fs_in.binormal);
 	mat3 TBN = mat3(T, B, N) ;
 	
-	if (has_normals_texture) {
-		
+	if (has_normals_texture) 
 		vec3 N_map = texture(normals_texture, fs_in.texcoord).xyz * 2.0 - 1; 
 		vec3 N = normalize(TBN * N_map);
 		geometry_normal = vec4(N * 0.5 + 0.5, 0.0);

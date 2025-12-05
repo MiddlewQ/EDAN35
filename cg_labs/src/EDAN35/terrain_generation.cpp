@@ -70,30 +70,6 @@ edan35::TerrainGenerator::run()
 	if (diffuse_shader == 0u)
 		LogError("Failed to load diffuse shader");
 
-	GLuint normal_shader = 0u;
-	program_manager.CreateAndRegisterProgram("Normal",
-		{ { ShaderType::vertex, "EDAF80/normal.vert" },
-		  { ShaderType::fragment, "EDAF80/normal.frag" } },
-		normal_shader);
-	if (normal_shader == 0u)
-		LogError("Failed to load normal shader");
-
-	GLuint tangent_shader = 0u;
-	program_manager.CreateAndRegisterProgram("Tangent",
-		{ { ShaderType::vertex, "EDAF80/tangent.vert" },
-		  { ShaderType::fragment, "EDAF80/tangent.frag" } },
-		tangent_shader);
-	if (tangent_shader == 0u)
-		LogError("Failed to load tangent shader");
-
-	GLuint binormal_shader = 0u;
-	program_manager.CreateAndRegisterProgram("Bitangent",
-		{ { ShaderType::vertex, "EDAF80/binormal.vert" },
-		  { ShaderType::fragment, "EDAF80/binormal.frag" } },
-		binormal_shader);
-	if (binormal_shader == 0u)
-		LogError("Failed to load binormal shader");
-
 	GLuint texcoord_shader = 0u;
 	program_manager.CreateAndRegisterProgram("Texture coords",
 		{ { ShaderType::vertex, "EDAF80/texcoord.vert" },
@@ -118,19 +94,25 @@ edan35::TerrainGenerator::run()
 	if (terrain_shader == 0u)
 		LogError("Failed to load water shader");
 
-	auto const light_position = glm::vec3(-2.0f, 4.0f, 2.0f);
+	auto light_position = glm::vec3(5.0f, 10.0f, 5.0f);
 	auto const set_uniforms = [&light_position](GLuint program) {
 		glUniform3fv(glGetUniformLocation(program, "light_position"), 1, glm::value_ptr(light_position));
-		};
+	};
 
 
-	//! TODO: Create Geometry
-	auto const terrain_quad = parametric_shapes::createQuad(10.0f, 10.0f, 1000u, 1000u);
+	//! Create Geometry
+	auto const terrain_quad = parametric_shapes::createQuad(20.0f, 20.0f, 1000u, 1000u);
 	auto terrain = Node();
 	terrain.set_geometry(terrain_quad);
 	terrain.set_program(&terrain_shader, set_uniforms);
 	TRSTransformf& terrain_transform_ref = terrain.get_transform();
 
+	// Sun position
+	auto const sun_sphere = parametric_shapes::createSphere(0.3f, 10, 10);
+	auto sun = Node();
+	sun.set_geometry(sun_sphere);
+	sun.set_program(&fallback_shader, set_uniforms);
+	TRSTransformf& sun_ref = sun.get_transform();
 
 
 
@@ -194,7 +176,8 @@ edan35::TerrainGenerator::run()
 
 		// Render Terrain
 		terrain.render(mCamera.GetWorldToClipMatrix());
-
+		sun_ref.SetTranslate(light_position);
+		sun.render(mCamera.GetWorldToClipMatrix());
 
 
 
@@ -216,6 +199,9 @@ edan35::TerrainGenerator::run()
 			ImGui::Checkbox("Show basis", &show_basis);
 			ImGui::SliderFloat("Basis thickness scale", &basis_thickness_scale, 0.0f, 100.0f);
 			ImGui::SliderFloat("Basis length scale", &basis_length_scale, 0.0f, 100.0f);
+			ImGui::SliderFloat("Change light x", &light_position[0], 0.0f, 20.0f);
+			ImGui::SliderFloat("Change light y", &light_position[1], 0.0f, 20.0f);
+			ImGui::SliderFloat("Change light z", &light_position[2], 0.0f, 20.0f);
 		}
 		ImGui::End();
 

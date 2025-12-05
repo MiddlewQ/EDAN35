@@ -51,7 +51,7 @@ void writeColor(int index, Vec3 p, uint8_t *pixels) {
     }
 }
 
-Color traceRay(const Ray &r, Scene scene, int depth) {
+Color traceRay(const Ray &r, Scene& scene, int depth) {
     Color c, directColor, reflectedColor, refractedColor;
     if (depth < 0) return c;
     
@@ -158,11 +158,11 @@ int main() {
     camera.setup(imageWidth, imageHeight);
 
     // Ray trace pixels
-    int depth = 3;
+    int depth = 4;
     std::cout << "Rendering... ";
     clock_t start = clock();
 
-    const int samples_per_side = 3;
+    const int samples_per_side = 4;
     const int samples_per_pixel = samples_per_side * samples_per_side;
 
 

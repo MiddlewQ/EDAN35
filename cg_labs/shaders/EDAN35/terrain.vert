@@ -14,18 +14,16 @@ layout (location = 2) in vec2 texcoord;
 uniform mat4 vertex_model_to_world;
 uniform mat4 vertex_world_to_clip;
 
-
 float eps = 0.001;
 
 
 out VS_OUT {
-	vec3 normals;
+	vec3 world_position;
+	vec3 normal;
 	vec2 texcoord;
 } vs_out;
 
-
-
-
+// ------------------- START NOISE
 float hash(vec2 p)
 {
     p  = 50.0*fract( p*0.3183099 + vec2(0.71,0.113));
@@ -67,7 +65,7 @@ float height_displacement(vec2 position, int N)
 	}
 	return height_sum;
 }
-
+// ------------------- End Noise
 
 vec3 get_normal(const vec3 p, int N)
 {
@@ -78,9 +76,9 @@ vec3 get_normal(const vec3 p, int N)
 	float h_back    = height_displacement(vec2(p.x, p.z - eps), N);
 
 	vec3 normal = vec3(
-		h_right - h_left,
+		-(h_right - h_left),
 		2.0f*eps,
-		h_forward - h_back 
+		-(h_forward - h_back) 
 	);
 
 
@@ -90,11 +88,19 @@ vec3 get_normal(const vec3 p, int N)
 
 void main() {
 	int N = 5;
+	// World Position
 	float height = height_displacement(vertex.xz, N);
 	vec3 displaced_vertex = vec3(vertex.x, height, vertex.z);
+    vec3 world_pos = vec3(vertex_model_to_world * vec4(displaced_vertex, 1.0));
+	vs_out.world_position = world_pos;
 
-	vs_out.normals = get_normal(vertex, N);
+	// Normals
+	vec3 normal = get_normal(displaced_vertex, N);
+	normal = vec3(vertex_model_to_world * vec4(normal, 0.0));
+	vs_out.normal = normalize(normal);
+
+	// Textures
 	vs_out.texcoord = texcoord;
 
-	gl_Position =  vertex_world_to_clip * vertex_model_to_world * vec4(displaced_vertex, 1.0);
+	gl_Position =  vertex_world_to_clip * vec4(world_pos, 1.0);
 }
