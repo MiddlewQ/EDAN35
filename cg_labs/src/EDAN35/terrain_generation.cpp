@@ -45,7 +45,7 @@ edan35::TerrainGenerator::run()
 {
 
 	// Set up the camera
-	mCamera.mWorld.SetTranslate(glm::vec3(-10.0f, 6.5f, -10.0f));
+	mCamera.mWorld.SetTranslate(glm::vec3(10.0f, 0.0f, 10.0f));
 	mCamera.mWorld.LookAt(glm::vec3(0.0f));
 	mCamera.mMouseSensitivity = glm::vec2(0.003f);
 	mCamera.mMovementSpeed = glm::vec3(3.0f); // 3 m/s => 10.8 km/h
@@ -54,7 +54,7 @@ edan35::TerrainGenerator::run()
 	ShaderProgramManager program_manager;
 	GLuint fallback_shader = 0u;
 	program_manager.CreateAndRegisterProgram("Fallback",
-		{ { ShaderType::vertex, "common/fallback.vert" },
+		{ { ShaderType::vertex, "common/fullscreen.vert" },
 		  { ShaderType::fragment, "common/fallback.frag" } },
 		fallback_shader);
 	if (fallback_shader == 0u) {
@@ -62,59 +62,69 @@ edan35::TerrainGenerator::run()
 		return;
 	}
 
-	GLuint diffuse_shader = 0u;
-	program_manager.CreateAndRegisterProgram("Diffuse",
-		{ { ShaderType::vertex, "EDAF80/diffuse.vert" },
-		  { ShaderType::fragment, "EDAF80/diffuse.frag" } },
-		diffuse_shader);
-	if (diffuse_shader == 0u)
-		LogError("Failed to load diffuse shader");
+	GLuint ray_marching_shader = 0u;
+	program_manager.CreateAndRegisterProgram("Ray Marching",
+		{ { ShaderType::vertex, "EDAN35/ray_marching.vert"},
+		  { ShaderType::fragment, "EDAN35/ray_marching.frag"} },
+		ray_marching_shader);
+	if (ray_marching_shader == 0u)
+		LogError("Failed to load ray_marching shader");
+
+
 
 	GLuint texcoord_shader = 0u;
-	program_manager.CreateAndRegisterProgram("Texture coords",
-		{ { ShaderType::vertex, "EDAF80/texcoord.vert" },
+	program_manager.CreateAndRegisterProgram("Texcoord",
+		{ { ShaderType::vertex, "common/fullscreen.vert" },
 		  { ShaderType::fragment, "EDAF80/texcoord.frag" } },
 		texcoord_shader);
 	if (texcoord_shader == 0u)
 		LogError("Failed to load texcoord shader");
 
-	GLuint water_shader = 0u;
-	program_manager.CreateAndRegisterProgram("Water coords",
-		{ { ShaderType::vertex, "EDAF80/water.vert" },
-	 	  { ShaderType::fragment, "EDAF80/water.frag"} },
-		water_shader);
-	if (water_shader == 0u)
-		LogError("Failed to load water shader");
-
 	GLuint terrain_shader = 0u;
-	program_manager.CreateAndRegisterProgram("Terrian coords",
+	program_manager.CreateAndRegisterProgram("Terrian",
 		{ { ShaderType::vertex, "EDAN35/terrain.vert" },
 		  { ShaderType::fragment, "EDAN35/terrain.frag"} },
 		terrain_shader);
 	if (terrain_shader == 0u)
 		LogError("Failed to load water shader");
 
-	auto light_position = glm::vec3(5.0f, 10.0f, 5.0f);
-	auto const set_uniforms = [&light_position](GLuint program) {
+	GLuint water_shader = 0u;
+	program_manager.CreateAndRegisterProgram("Water coords",
+		{ { ShaderType::vertex, "EDAF80/water.vert" },
+		  { ShaderType::fragment, "EDAF80/water.frag"} },
+		water_shader);
+	if (water_shader == 0u)
+		LogError("Failed to load water shader");
+
+	glm::vec3 light_position = glm::vec3(0.0f, 30.0f, 0.0f);
+	glm::vec3 camera_position = mCamera.mWorld.GetTranslation();
+	glm::vec3 camera_front = glm::normalize(mCamera.mWorld.GetFront());
+	glm::vec3 camera_right = glm::normalize(mCamera.mWorld.GetRight());
+	glm::vec3 camera_up = glm::normalize(mCamera.mWorld.GetUp());
+	int octaves = 8;
+	float atmosphere_dimming = 0.006f;
+
+	auto const set_uniforms = [&light_position, &camera_position, &camera_front, &camera_right, &camera_up, &octaves, &atmosphere_dimming](GLuint program) {
 		glUniform3fv(glGetUniformLocation(program, "light_position"), 1, glm::value_ptr(light_position));
-	};
+		glUniform3fv(glGetUniformLocation(program, "camera_position"), 1, glm::value_ptr(camera_position));
+		glUniform3fv(glGetUniformLocation(program, "camera_front"), 1, glm::value_ptr(camera_front));
+		glUniform3fv(glGetUniformLocation(program, "camera_right"), 1, glm::value_ptr(camera_right));
+		glUniform3fv(glGetUniformLocation(program, "camera_up"), 1, glm::value_ptr(camera_up));
+		glUniform1i(glGetUniformLocation(program, "octaves"), octaves);
+		glUniform1f(glGetUniformLocation(program, "atmosphere_dimming"), atmosphere_dimming);
+		};
 
 
-	//! Create Geometry
-	auto const terrain_quad = parametric_shapes::createQuad(20.0f, 20.0f, 1000u, 1000u);
-	auto terrain = Node();
-	terrain.set_geometry(terrain_quad);
-	terrain.set_program(&terrain_shader, set_uniforms);
-	TRSTransformf& terrain_transform_ref = terrain.get_transform();
+	//! Create Screen
+	auto const fullscreen_quad = parametric_shapes::createQuad(1.0f, 1.0f, 1u, 1u);
+	auto ray_marching = Node();
+	ray_marching.set_geometry(fullscreen_quad);
+	ray_marching.set_program(&ray_marching_shader, set_uniforms);
 
-	// Sun position
-	auto const sun_sphere = parametric_shapes::createSphere(0.3f, 10, 10);
-	auto sun = Node();
-	sun.set_geometry(sun_sphere);
-	sun.set_program(&fallback_shader, set_uniforms);
-	TRSTransformf& sun_ref = sun.get_transform();
-
-
+	// -- Create Light Source Indicator
+	float MIN_X = -100.0, MAX_X = 100.0;
+	float MIN_Y =  100.0, MAX_Y = 1000.0;
+	float MIN_Z = -100.0, MAX_Z = 100.0;
 
 	glClearDepthf(1.0f);
 	glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -174,13 +184,13 @@ edan35::TerrainGenerator::run()
 		bonobo::changePolygonMode(polygon_mode);
 
 
-		// Render Terrain
-		terrain.render(mCamera.GetWorldToClipMatrix());
-		sun_ref.SetTranslate(light_position);
-		sun.render(mCamera.GetWorldToClipMatrix());
+		camera_position = mCamera.mWorld.GetTranslation();
+		camera_front = glm::normalize(mCamera.mWorld.GetFront());
+		camera_right = glm::normalize(mCamera.mWorld.GetRight());
+		camera_up = glm::normalize(mCamera.mWorld.GetUp());
 
-
-
+		// Render Screen
+		ray_marching.render(mCamera.GetWorldToClipMatrix());
 
 
 
@@ -193,15 +203,20 @@ edan35::TerrainGenerator::run()
 			bonobo::uiSelectPolygonMode("Polygon mode", polygon_mode);
 			auto selection_result = program_manager.SelectProgram("Shader", program_index);
 			if (selection_result.was_selection_changed) {
-				terrain.set_program(selection_result.program, set_uniforms);
+				ray_marching.set_program(selection_result.program, set_uniforms);
 			}
+			ImGui::Separator();
+			ImGui::Text("FPS: %.3f ms", 1000.0f / std::chrono::duration<float, std::milli>(deltaTimeUs).count());
 			ImGui::Separator();
 			ImGui::Checkbox("Show basis", &show_basis);
 			ImGui::SliderFloat("Basis thickness scale", &basis_thickness_scale, 0.0f, 100.0f);
 			ImGui::SliderFloat("Basis length scale", &basis_length_scale, 0.0f, 100.0f);
-			ImGui::SliderFloat("Change light x", &light_position[0], 0.0f, 20.0f);
-			ImGui::SliderFloat("Change light y", &light_position[1], 0.0f, 20.0f);
-			ImGui::SliderFloat("Change light z", &light_position[2], 0.0f, 20.0f);
+			ImGui::SliderFloat("Light X value", &light_position[0], MIN_X, MAX_X);
+			ImGui::SliderFloat("Light Y value", &light_position[1], MIN_Y, MAX_Y);
+			ImGui::SliderFloat("Light Z value", &light_position[2], MIN_Z, MAX_Z);
+			ImGui::SliderFloat("Atmosphere dimming", &atmosphere_dimming, 0.0005f, 0.008f);
+			ImGui::SliderInt("Terrain octaves", &octaves, 1, 15);
+
 		}
 		ImGui::End();
 
