@@ -9,11 +9,14 @@ uniform vec3 camera_front;
 uniform vec3 camera_right;
 uniform vec3 camera_up;
 
-// Atmosphere uniforms
+// Variable uniforms
 uniform vec3 light_position;
 uniform float atmosphere_dimming;
+uniform int binary_search_depth;
+uniform float terrain_scale;
 
 
+float sea_level = 20.0;
 
 in VS_OUT {
 	vec2 texcoord;
@@ -25,6 +28,7 @@ out vec4 frag_color;
 // --------------------------------------------------------------
 // ------------------------ START NOISE -------------------------
 // --------------------------------------------------------------
+
 float hash2(vec2 p) {
     // floor not strictly needed if you only pass integer coords,
     // but it doesn't hurt
@@ -60,22 +64,36 @@ float value_noise(vec2 p) {
     return n; // in [0,1]
 }
 
-float fbm(vec2 p) {
+float fbm(vec2 pos, int levels) {
     float sum = 0.0;
     float amp = 1.0;
     float freq = 1.0;
 
+	mat2 rotation_matrix = mat2(
+		4.0/5.0, 3.0/5.0,
+		-3.0/5.0, 4.0/5.0
+	);
+	mat2 current_matrix = mat2(
+		1.0, 0.0,
+		0.0, 1.0
+	);
+
     // tweak octaves count later, start with 5
     for (int i = 0; i < octaves; ++i) {
-        sum += value_noise(p * freq) * amp;
-        freq *= 2.0;   // higher frequency each octave
-        amp *= 0.5;    // lower amplitude each octave
+        sum += value_noise(pos * freq * current_matrix) * amp;
+        freq *= 2.0;   
+        amp *= 0.5;    
+		current_matrix *= rotation_matrix;
     }
 
-    // sum is in [0, something]; we can roughly normalize by total amp
-    float norm = 1.0 / (1.0 + 0.5 + 0.25 + 0.125 + 0.0625); // ~1.94
-    return sum * norm; // ~[0,1]
+
+    const float norm = 1.0 / (1.0 + 0.5 + 0.25 + 0.125 + 0.0625); 
+    return sum * norm; 
 }
+
+
+
+
 
 // --------------------------------------------------------------
 // ------------------------- END NOISE --------------------------
@@ -93,6 +111,50 @@ vec3 atmosphere_mixer(float t) {
 }
 
 
+vec3 sky(vec3 light_position, vec3 ray_origin_world, vec3 ray_direction_world) {
+	// Sky color
+	vec3 sky_color = vec3(0.5, 0.7, 1.0);
+	sky_color -= ray_direction_world.y * 0.4; 
+
+	// -- Show Light Source Location
+	vec3 light_to_camera = normalize(light_position - ray_origin_world);
+	float alignment = dot(ray_direction_world, light_to_camera);
+	float sun_threshold = 0.98;
+	float sun_mask = smoothstep(sun_threshold, 1.0, alignment);
+	vec3 sun_color = vec3(1.0, 0.95, 0.7);
+	sky_color = mix(sky_color, sun_color, sun_mask);
+
+
+	return sky_color;
+
+}
+
+
+vec3 sky_clouds( in vec3 ray_origin, in vec3 ray_direction)
+{
+    // background sky     
+    //vec3 col = vec3(0.45,0.6,0.85)/0.85 - rd.y*vec3(0.4,0.36,0.4);
+    //vec3 col = vec3(0.4,0.6,1.1) - rd.y*0.4;
+    vec3 col = vec3(0.42,0.62,1.1) - ray_direction.y*0.4;
+
+    // clouds
+    float t = (2500.0-ray_origin.y)/ray_direction.y;
+    if( t>0.0 )
+    {
+        vec2 position_xz = (ray_origin+t*ray_direction).xz;
+        float cl = fbm( position_xz * 0.00104, 1 );
+        float dl = smoothstep(-0.2,0.6,cl);
+        col = mix( col, vec3(1.0), 0.12*dl );
+    }
+    
+	// sun glare    
+    //float sun = clamp( dot(kSunDir,rd), 0.0, 1.0 );
+    //col += 0.2*vec3(1.0,0.6,0.3)*pow( sun, 32.0 );
+    
+	return col;
+}
+
+
 // --------------------------------------------------------------
 // ---------------------- END ATMOSHPERE ------------------------
 // --------------------------------------------------------------
@@ -103,33 +165,72 @@ vec3 atmosphere_mixer(float t) {
 // ----------------------- START TERRAIN ------------------------
 // --------------------------------------------------------------
 
+/*
+float base_height(vec2 plane) {
+	const float scale = 1.0 / 2000.0;;
+	float e = fbm_low(plane * scale);
+	e = e * 600.0 + 600.0;
+	return e;
+}
+
+float detail_height(vec2 plane) {
+	const scale = 0.02;
+	float d = fbm_high(plane * scale);
+	return return d * 3.0;
+}
+*/
+
+// Terrain with level of detail depending on distance t from camera
+float terrain_height_lod(vec2 plane, float t) {
+	float scale = terrain_scale;
+
+	const float NEAR_LOD = 30.0;
+	const float FAR_LOD = 300.0;
+
+
+	float lod = clamp((t - NEAR_LOD) / (FAR_LOD - NEAR_LOD), 0.0, 1.0);
+	float min_octaves = 8.0;
+	float max_octaves = float(octaves);
+	int levels = int(mix(min_octaves, max_octaves, 1.0 - lod));
+	
+
+	float height = fbm(plane * scale, levels); // [0,1]
+	height = height * 2.0 - 1.0;               // [-1,1]
+	
+	float amplitude = 80.0;
+	height = height * amplitude + 50.0;
+
+
+	return height;
+}
+
 float terrain_height(vec2 plane) {
     // controls "zoom" of the terrain
-    float scale = 0.04;
+    //const float TERRAIN_DOMAIN_SCALE = 0.008;
 
-    float n = fbm(plane * scale); // [0,1]
+    float n = fbm(plane * terrain_scale, octaves); // [0,1]
     n = n * 2.0 - 1.0;            // [-1,1]
 
-    float amplitude = 25.0;
-    float h = n * amplitude;
+    float amplitude = 80.0;
+    float h = n * amplitude + 50.0;
 
     // optional: 'sea level'
-    float sea_level = -5.0;
-    h = max(h, sea_level);
+    //float sea_level = -30.0;
+    //h = max(h, sea_level);
 
     return h;
 }
 
-vec3 terrain_normal(vec3 world_position) {
+vec3 terrain_normal(vec3 world_position, float t) {
 	// Steps in world position to get the surrounding terrain
-	float epsilon = 0.1;
+	float epsilon = 0.05;
 
 	vec2 plane = world_position.xz;
 
-	float h_right    = terrain_height(plane + vec2( epsilon, 0.0));
-	float h_left     = terrain_height(plane + vec2(-epsilon, 0.0));
-	float h_forward  = terrain_height(plane + vec2(0.0, epsilon));
-	float h_backward = terrain_height(plane + vec2(0.0, -epsilon));
+	float h_right    = terrain_height_lod(plane + vec2( epsilon, 0.0), t);
+	float h_left     = terrain_height_lod(plane + vec2(-epsilon, 0.0), t);
+	float h_forward  = terrain_height_lod(plane + vec2(0.0, epsilon), t);
+	float h_backward = terrain_height_lod(plane + vec2(0.0, -epsilon), t);
 
 	vec3 normal = vec3(
 		h_left - h_right,
@@ -151,67 +252,95 @@ float terrain_diffuse(vec3 light_direction, vec3 normals) {
 float terrain_shadow(vec3 ray_origin, vec3 light_direction, float max_dist) {
 
 	const int MAX_STEPS = 64;
-	float T_MAX = max_dist;
+	float MAX_DISTANCE = max_dist;
 
 	float t = 0.0;
-	float dt = T_MAX / float(MAX_STEPS);
+	float dt = MAX_DISTANCE / float(MAX_STEPS);
 
    for (int i = 0; i < MAX_STEPS; ++i) {
-        t += dt;
-        if (t >= max_dist)
-            break;
 
         vec3 position = ray_origin + light_direction * t;
-        float h = terrain_height(position.xz);
+        float h = terrain_height_lod(position.xz, t);
 
-        if (position.y < h) {
+		if (position.y < h) {
             return 0.0;
         }
+
+		t += dt;
+        if (t >= max_dist)
+            break;
     }
 
 	return 1.0;
 }
 
-bool terrain_raymarch(vec3 ray_origin, vec3 ray_direction, out float t_hit)
+bool terrain_raymarch(
+	vec3 ray_origin,
+	vec3 ray_direction,
+	out float t_hit)
 {
-	const int MAX_STEPS = 400;
+	const int MAX_STEPS = 800;
+	const float MAX_DISTANCE = 500.0;
+	//const float STEP_DISTANCE = MAX_DISTANCE / float(MAX_STEPS);
+	const float MIN_STEP = 0.025;
+	const float MAX_STEP = 5.0;
 
-	float t_min = 0.00;
-	float t_max = 300.0;
-
-	float t = t_min;
-	float dt = 0.3;
-
-	float lh = 0.0;
-	float ly = 0.0;
+	float t = 0.0;
+	float prev_t = 0.0;
+	float prev_dis = 0.0;
+	bool has_prev = false;
 
 
 	for(int i = 0; i < MAX_STEPS; ++i) {
-		vec3 position = ray_origin + t * ray_direction;
-		float h = terrain_height(position.xz);
-		float dis = position.y - h;
 
-		if(dis < 0.0) {
-				
-			float D0 = ly - lh;				// previous ray_y - terrain
-            float D1 = dis;					// current  ray_y - terrain
-            float alpha = D0 / (D0 - D1);
+		vec3 position      = ray_origin + t * ray_direction;
+		float terrain_h    = terrain_height_lod(position.xz, t);
+		float height_delta = position.y - terrain_h;
 
-            t_hit = (t - dt) + alpha * dt;
+		if (height_delta < 0.0) {
+			if (!has_prev) {
+				t_hit = t;
+				return true;
+			}
+
+			// Locally refine height value to prevent wobble
+			float t_min = prev_t;
+			float t_max = t;
+
+			// Binary search using X iterations
+			for (int j = 0; j < binary_search_depth; ++j) {
+				float t_mid = 0.5 * (t_min + t_max);
+				vec3 mid_pos = ray_origin + t_mid * ray_direction;
+				float mid_height = terrain_height_lod(mid_pos.xz, t_mid);
+				float mid_delta = mid_pos.y - mid_height;
+
+				if (mid_delta > 0.0) 
+					t_min = t_mid;
+				else
+					t_max = t_mid;
+			}
+
+			t_hit = 0.5 * (t_min + t_max);
 			return true;
-		}
+		}	
 
-		lh = h;
-		ly = position.y;
+		has_prev = true;
+		prev_t = t;
 
-		float a = 1.0 - smoothstep( 0.12, 0.13, abs(h+0.12) ); // flag high-slope areas (-0.25, 0.0)
-		//dt = dis * 0.8 * (1.0 - 0.75 * a);
+		float ray_dir_y = abs(ray_direction.y);
+		float step_ray = height_delta / max(ray_dir_y, 0.002);
+
+		float far_factor = smoothstep(100.0, 2000.0, t); // 0 near, 1 far
+		float scale = mix(0.2, 0.8, far_factor);
+		float dt_raw = step_ray * scale;
+
+		float dt = clamp(dt_raw, MIN_STEP, MAX_STEP);
+
 		t += dt;
-		if (t > t_max) {
+		if (t > MAX_DISTANCE) 
 			break;
-		}
 	}
-
+	t = t_hit;
 	return false;
 }
 
@@ -234,56 +363,54 @@ void main() {
 	            + ray_direction_camera.z * camera_front);
 
     float t_hit = 0.0;
-    bool ray_hit = terrain_raymarch(ray_origin_world, ray_direction_world, t_hit);
-	vec3 hit_point = ray_origin_world + ray_direction_world * t_hit;
+
 
 
 	vec3 color;
 	
 
-	float distance_to_hit = length(ray_origin_world - hit_point);
-	if (ray_hit) {
+	bool ray_hit = terrain_raymarch(ray_origin_world, ray_direction_world, t_hit);
+	vec3 hit_point = ray_origin_world + ray_direction_world * t_hit;
 
-		vec3 normal = terrain_normal(hit_point);
+	
+	if (ray_hit) {
+		float distance_to_hit = length(ray_origin_world - hit_point);
+		vec3 normal = terrain_normal(hit_point, distance_to_hit);
 		float light_distance = length(light_position - hit_point);
 		vec3 light_direction = normalize(light_position - hit_point);
 		vec3 origin_shadow = hit_point + normal * 0.1;
 
 		// lighting
-		float ambient = 0.0;
+		float ambient = 0.2;
 		float diffuse = terrain_diffuse(light_direction, normal);
 		float shadow  = terrain_shadow(origin_shadow, light_direction, light_distance);
 		float light_term = ambient + diffuse * shadow;
 
 		vec3 water_color = vec3(0.0, 0.3, 0.7);
 		vec3 rock_color  = vec3(0.5, 0.3, 0.2);
+		vec3 atmosphere_color = vec3(0.8);
 		
 		vec3 rockvid_color = vec3(228.0/255.0, 172.0/255.0, 155.0/255.0);
 		vec3 grass_color = vec3(0.51, 0.51, 0.05);
 		float lambda = smoothstep(0.6, 0.7, normal.y);
 		vec3 base_color = mix(rockvid_color, grass_color, lambda);
-		
+
+
 
 		// Mix between grass and rock color
-	    color = (hit_point.y > -4.999) ? base_color : water_color;
+		color = (hit_point.y > sea_level) ? base_color : water_color;
+		//color = base_color;
 		color *= light_term;
+		color = mix(atmosphere_color, color, atmosphere_mixer(distance_to_hit));
 	} else {
-		// Sky color
-		vec3 sky_color = vec3(0.5, 0.7, 1.0);
-
-		// -- Show Light Source Location
-		vec3 light_to_camera = normalize(light_position - ray_origin_world);
-		float alignment = dot(ray_direction_world, light_to_camera);
-		float sun_threshold = 0.98;
-		float sun_mask = smoothstep(sun_threshold, 1.0, alignment);
-		vec3 sun_color = vec3(1.0, 0.95, 0.7);
-
-		color = mix(sky_color, sun_color, sun_mask);
+		//color = sky(light_position, ray_origin_world, ray_direction_world);
+		color = sky_clouds(ray_origin_world, ray_direction_world);
+		
 	}
-
-	vec3 atmosphere_color = vec3(0.8);
-	color = mix(atmosphere_color, color, atmosphere_mixer(distance_to_hit));
-
+	
+	//float h = terrain_height(hit_point.xz);
+	//vec3 debug_color = vec3(h * 0.03 + 0.5); // simple mapping
+	//color = debug_color;
 
 	frag_color = vec4(color, 1.0);
 }

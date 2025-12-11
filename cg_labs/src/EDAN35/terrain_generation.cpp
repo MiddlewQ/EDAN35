@@ -43,12 +43,13 @@ edan35::TerrainGenerator::~TerrainGenerator()
 void
 edan35::TerrainGenerator::run()
 {
-
+	std::cout << glGetString(GL_RENDERER) << "\n";
+	std::cout << glGetString(GL_VENDOR) << "\n";
 	// Set up the camera
-	mCamera.mWorld.SetTranslate(glm::vec3(10.0f, 0.0f, 10.0f));
+	mCamera.mWorld.SetTranslate(glm::vec3(0.0f, 50.0f, 0.0f));
 	mCamera.mWorld.LookAt(glm::vec3(0.0f));
 	mCamera.mMouseSensitivity = glm::vec2(0.003f);
-	mCamera.mMovementSpeed = glm::vec3(3.0f); // 3 m/s => 10.8 km/h
+	mCamera.mMovementSpeed = glm::vec3(10.0f); // 3 m/s => 10.8 km/h
 
 	// Create the shader programs
 	ShaderProgramManager program_manager;
@@ -96,15 +97,23 @@ edan35::TerrainGenerator::run()
 	if (water_shader == 0u)
 		LogError("Failed to load water shader");
 
-	glm::vec3 light_position = glm::vec3(0.0f, 30.0f, 0.0f);
+	glm::vec3 light_position = glm::vec3(0.0f, 50.0f, 0.0f);
 	glm::vec3 camera_position = mCamera.mWorld.GetTranslation();
 	glm::vec3 camera_front = glm::normalize(mCamera.mWorld.GetFront());
 	glm::vec3 camera_right = glm::normalize(mCamera.mWorld.GetRight());
 	glm::vec3 camera_up = glm::normalize(mCamera.mWorld.GetUp());
-	int octaves = 8;
-	float atmosphere_dimming = 0.006f;
+	int octaves = 12;
+	float atmosphere_dimming = 0.004f;
+	float terrain_scale = 0.006f;
+	int binary_search_depth = 3;
 
-	auto const set_uniforms = [&light_position, &camera_position, &camera_front, &camera_right, &camera_up, &octaves, &atmosphere_dimming](GLuint program) {
+	// -- Create Light Source Indicator
+	float MIN_X = -100.0, MAX_X = 100.0;
+	float MIN_Y = 100.0, MAX_Y = 1000.0;
+	float MIN_Z = -100.0, MAX_Z = 100.0;
+
+
+	auto const set_uniforms = [&light_position, &camera_position, &camera_front, &camera_right, &camera_up, &octaves, &atmosphere_dimming, &binary_search_depth, &terrain_scale](GLuint program) {
 		glUniform3fv(glGetUniformLocation(program, "light_position"), 1, glm::value_ptr(light_position));
 		glUniform3fv(glGetUniformLocation(program, "camera_position"), 1, glm::value_ptr(camera_position));
 		glUniform3fv(glGetUniformLocation(program, "camera_front"), 1, glm::value_ptr(camera_front));
@@ -112,6 +121,8 @@ edan35::TerrainGenerator::run()
 		glUniform3fv(glGetUniformLocation(program, "camera_up"), 1, glm::value_ptr(camera_up));
 		glUniform1i(glGetUniformLocation(program, "octaves"), octaves);
 		glUniform1f(glGetUniformLocation(program, "atmosphere_dimming"), atmosphere_dimming);
+		glUniform1f(glGetUniformLocation(program, "terrain_scale"), terrain_scale);
+		glUniform1i(glGetUniformLocation(program, "binary_search_depth"), binary_search_depth);
 		};
 
 
@@ -121,10 +132,7 @@ edan35::TerrainGenerator::run()
 	ray_marching.set_geometry(fullscreen_quad);
 	ray_marching.set_program(&ray_marching_shader, set_uniforms);
 
-	// -- Create Light Source Indicator
-	float MIN_X = -100.0, MAX_X = 100.0;
-	float MIN_Y =  100.0, MAX_Y = 1000.0;
-	float MIN_Z = -100.0, MAX_Z = 100.0;
+
 
 	glClearDepthf(1.0f);
 	glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -193,6 +201,8 @@ edan35::TerrainGenerator::run()
 		ray_marching.render(mCamera.GetWorldToClipMatrix());
 
 
+		float dt_ms = std::chrono::duration<float, std::milli>(deltaTimeUs).count();
+		float fps = (dt_ms > 0.0f) ? 1000.0f / dt_ms : 0.0f;
 
 		bool const opened = ImGui::Begin("Scene Controls", nullptr, ImGuiWindowFlags_None);
 		if (opened) {
@@ -206,16 +216,25 @@ edan35::TerrainGenerator::run()
 				ray_marching.set_program(selection_result.program, set_uniforms);
 			}
 			ImGui::Separator();
-			ImGui::Text("FPS: %.3f ms", 1000.0f / std::chrono::duration<float, std::milli>(deltaTimeUs).count());
+			ImGui::Text("Frame: %.3f ms (%.1f FPS)", dt_ms, fps);
 			ImGui::Separator();
 			ImGui::Checkbox("Show basis", &show_basis);
 			ImGui::SliderFloat("Basis thickness scale", &basis_thickness_scale, 0.0f, 100.0f);
 			ImGui::SliderFloat("Basis length scale", &basis_length_scale, 0.0f, 100.0f);
+			ImGui::Separator();
+			ImGui::Text("Light & Sky");
 			ImGui::SliderFloat("Light X value", &light_position[0], MIN_X, MAX_X);
 			ImGui::SliderFloat("Light Y value", &light_position[1], MIN_Y, MAX_Y);
 			ImGui::SliderFloat("Light Z value", &light_position[2], MIN_Z, MAX_Z);
-			ImGui::SliderFloat("Atmosphere dimming", &atmosphere_dimming, 0.0005f, 0.008f);
-			ImGui::SliderInt("Terrain octaves", &octaves, 1, 15);
+			ImGui::SliderFloat("Atmosphere dimming", &atmosphere_dimming, 0.00025f, 0.008f);
+			ImGui::Separator();
+			ImGui::Text("Terrain");
+			ImGui::SliderFloat("Scaling", &terrain_scale, 0.001f, 0.012f);
+			ImGui::SliderInt("Octaves", &octaves, 1, 15);
+			ImGui::SliderInt("Binary Search", &binary_search_depth, 0, 10);
+			ImGui::Separator();
+
+
 
 		}
 		ImGui::End();

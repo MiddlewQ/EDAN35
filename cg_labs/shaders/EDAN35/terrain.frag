@@ -19,30 +19,6 @@ in VS_OUT {
 } fs_in;
 
 
-bool castRay( in vec3 ro, in vec3 rd, out float resT )
-{
-    float dt = 0.01;
-    float mint = 0.001;
-    float maxt = 10.0;
-    float lh = 0.0;
-    float ly = 0.0;
-    for( float t = mint; t<maxt; t += dt )
-    {
-        vec3  p = ro + rd*t;
-        float h = f( p.xz );
-        if( p.y < h )
-        {
-            // interpolate intersection distance
-            resT = t-dt+dt*(lh-ly)/(p.y-ly-h+lh);
-            return true;
-        }
-        // accuracy proportional to the distance
-        dt = 0.01*t;
-        lh = h;
-        ly = p.y;
-    }
-    return false;
-}
 
 out vec4 frag_color;
 
