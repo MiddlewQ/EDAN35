@@ -106,14 +106,16 @@ edan35::TerrainGenerator::run()
 	float atmosphere_dimming = 0.004f;
 	float terrain_scale = 0.006f;
 	int binary_search_depth = 3;
+	int max_steps = 800;
+	float max_distance = 500.0;
+	float max_step = 1.0;
 
 	// -- Create Light Source Indicator
 	float MIN_X = -100.0, MAX_X = 100.0;
 	float MIN_Y = 100.0, MAX_Y = 1000.0;
 	float MIN_Z = -100.0, MAX_Z = 100.0;
 
-
-	auto const set_uniforms = [&light_position, &camera_position, &camera_front, &camera_right, &camera_up, &octaves, &atmosphere_dimming, &binary_search_depth, &terrain_scale](GLuint program) {
+	auto const set_uniforms = [&light_position, &camera_position, &camera_front, &camera_right, &camera_up, &octaves, &atmosphere_dimming, &binary_search_depth, &terrain_scale, &max_steps, &max_distance, &max_step](GLuint program) {
 		glUniform3fv(glGetUniformLocation(program, "light_position"), 1, glm::value_ptr(light_position));
 		glUniform3fv(glGetUniformLocation(program, "camera_position"), 1, glm::value_ptr(camera_position));
 		glUniform3fv(glGetUniformLocation(program, "camera_front"), 1, glm::value_ptr(camera_front));
@@ -123,6 +125,9 @@ edan35::TerrainGenerator::run()
 		glUniform1f(glGetUniformLocation(program, "atmosphere_dimming"), atmosphere_dimming);
 		glUniform1f(glGetUniformLocation(program, "terrain_scale"), terrain_scale);
 		glUniform1i(glGetUniformLocation(program, "binary_search_depth"), binary_search_depth);
+		glUniform1i(glGetUniformLocation(program, "max_steps"), max_steps);
+		glUniform1f(glGetUniformLocation(program, "max_distance"), max_distance);
+		glUniform1f(glGetUniformLocation(program, "max_step"), max_step);
 		};
 
 
@@ -232,6 +237,9 @@ edan35::TerrainGenerator::run()
 			ImGui::SliderFloat("Scaling", &terrain_scale, 0.001f, 0.012f);
 			ImGui::SliderInt("Octaves", &octaves, 1, 15);
 			ImGui::SliderInt("Binary Search", &binary_search_depth, 0, 10);
+			ImGui::SliderInt("Max Steps", &max_steps, 100, 1000);
+			ImGui::SliderFloat("Max Distance", &max_distance, 100.0, 1000.0);
+			ImGui::SliderFloat("Max Step", &max_step, 0.1, 5.0);
 			ImGui::Separator();
 
 

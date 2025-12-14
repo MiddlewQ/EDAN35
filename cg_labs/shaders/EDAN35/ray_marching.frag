@@ -14,9 +14,14 @@ uniform vec3 light_position;
 uniform float atmosphere_dimming;
 uniform int binary_search_depth;
 uniform float terrain_scale;
+uniform int max_steps;
+uniform float max_distance;
+uniform float max_step;
 
 
 float sea_level = 20.0;
+
+float snow_level = 50.0;
 
 in VS_OUT {
 	vec2 texcoord;
@@ -135,7 +140,7 @@ vec3 sky_clouds( in vec3 ray_origin, in vec3 ray_direction)
     // background sky     
     //vec3 col = vec3(0.45,0.6,0.85)/0.85 - rd.y*vec3(0.4,0.36,0.4);
     //vec3 col = vec3(0.4,0.6,1.1) - rd.y*0.4;
-    vec3 col = vec3(0.42,0.62,1.1) - ray_direction.y*0.4;
+    vec3 sky_color = vec3(0.42,0.62,1.1) - ray_direction.y*0.4;
 
     // clouds
     float t = (2500.0-ray_origin.y)/ray_direction.y;
@@ -143,15 +148,15 @@ vec3 sky_clouds( in vec3 ray_origin, in vec3 ray_direction)
     {
         vec2 position_xz = (ray_origin+t*ray_direction).xz;
         float cl = fbm( position_xz * 0.00104, 1 );
-        float dl = smoothstep(-0.2,0.6,cl);
-        col = mix( col, vec3(1.0), 0.12*dl );
+        float dl = smoothstep(0.25,0.6,cl);
+        sky_color = mix( sky_color, vec3(1.0), 0.50*dl );
     }
     
 	// sun glare    
     //float sun = clamp( dot(kSunDir,rd), 0.0, 1.0 );
     //col += 0.2*vec3(1.0,0.6,0.3)*pow( sun, 32.0 );
     
-	return col;
+	return sky_color;
 }
 
 
@@ -223,7 +228,7 @@ float terrain_height(vec2 plane) {
 
 vec3 terrain_normal(vec3 world_position, float t) {
 	// Steps in world position to get the surrounding terrain
-	float epsilon = 0.05;
+	float epsilon = 0.03;
 
 	vec2 plane = world_position.xz;
 
@@ -260,8 +265,8 @@ float terrain_shadow(vec3 ray_origin, vec3 light_direction, float max_dist) {
    for (int i = 0; i < MAX_STEPS; ++i) {
 
         vec3 position = ray_origin + light_direction * t;
-        float h = terrain_height_lod(position.xz, t);
-
+        //float h = terrain_height_lod(position.xz, t);
+		float h = terrain_height_lod(position.xz, t);
 		if (position.y < h) {
             return 0.0;
         }
@@ -279,11 +284,11 @@ bool terrain_raymarch(
 	vec3 ray_direction,
 	out float t_hit)
 {
-	const int MAX_STEPS = 800;
-	const float MAX_DISTANCE = 500.0;
+	int MAX_STEPS = max_steps;
+	float MAX_DISTANCE = max_distance;
 	//const float STEP_DISTANCE = MAX_DISTANCE / float(MAX_STEPS);
 	const float MIN_STEP = 0.025;
-	const float MAX_STEP = 5.0;
+	float MAX_STEP = max_step;
 
 	float t = 0.0;
 	float prev_t = 0.0;
@@ -364,14 +369,10 @@ void main() {
 
     float t_hit = 0.0;
 
-
-
 	vec3 color;
-	
 
 	bool ray_hit = terrain_raymarch(ray_origin_world, ray_direction_world, t_hit);
 	vec3 hit_point = ray_origin_world + ray_direction_world * t_hit;
-
 	
 	if (ray_hit) {
 		float distance_to_hit = length(ray_origin_world - hit_point);
@@ -379,6 +380,8 @@ void main() {
 		float light_distance = length(light_position - hit_point);
 		vec3 light_direction = normalize(light_position - hit_point);
 		vec3 origin_shadow = hit_point + normal * 0.1;
+		//vec3 origin_shadow = hit_point + vec3(0.0, 0.3, 0.0);
+
 
 		// lighting
 		float ambient = 0.2;
@@ -389,11 +392,16 @@ void main() {
 		vec3 water_color = vec3(0.0, 0.3, 0.7);
 		vec3 rock_color  = vec3(0.5, 0.3, 0.2);
 		vec3 atmosphere_color = vec3(0.8);
+		vec3 snow_color = vec3(1.0);
 		
 		vec3 rockvid_color = vec3(228.0/255.0, 172.0/255.0, 155.0/255.0);
+		vec3 base_color = rockvid_color;
 		vec3 grass_color = vec3(0.51, 0.51, 0.05);
-		float lambda = smoothstep(0.6, 0.7, normal.y);
-		vec3 base_color = mix(rockvid_color, grass_color, lambda);
+		float lambda_point = smoothstep(snow_level*1.05, sea_level, hit_point.y);
+		float lambda_normal = smoothstep(0.6, 0.7, normal.y);
+		base_color = mix(rockvid_color, grass_color, lambda_point*lambda_normal);
+		float snow_factor = smoothstep(snow_level*0.95, 70.0, hit_point.y);
+		base_color = mix(base_color, snow_color, snow_factor);
 
 
 
