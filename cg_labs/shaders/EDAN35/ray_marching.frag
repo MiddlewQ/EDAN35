@@ -295,7 +295,7 @@ float terrain_shadow(vec3 ray_origin, vec3 ray_direction, float max_distance_to_
 
     const int max_shadow_steps = 64;
 
-    float max_shadow_distance = min(max_distance, max_distance_to_light);
+    float max_shadow_distance = max_distance_to_light;
 
     if (max_shadow_distance <= 1e-4)
         return 1.0;
@@ -308,7 +308,8 @@ float terrain_shadow(vec3 ray_origin, vec3 ray_direction, float max_distance_to_
 
     for (int i = 0; i < max_shadow_steps && travel_distance < max_shadow_distance; ++i) {
         vec3 hit_position = ray_origin + travel_distance * ray_direction;
-        float terrain_h = terrain_height_t(hit_position.xz, travel_distance);
+		float lod_distance = length(hit_position - camera_position);
+        float terrain_h = terrain_height_t(hit_position.xz, lod_distance);
         float height_delta = hit_position.y - terrain_h;
 
         if (height_delta < 0.0)
