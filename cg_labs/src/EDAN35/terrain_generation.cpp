@@ -98,7 +98,7 @@ edan35::TerrainGenerator::run()
 		LogError("Failed to load water shader");
 
 	// -- Uniforms 
-	bool use_lighting_position = true;
+	bool use_lighting_position = false;
 	glm::vec3 light_position = glm::vec3(0.0f, 100.0f, 0.0f);
 
 	// Calculate light direction from azimuth and elevation
@@ -112,22 +112,21 @@ edan35::TerrainGenerator::run()
 		glm::sin(azimuth_radians) * glm::cos(elevation_radians)
 	));
 
-
 	glm::vec3 camera_position = mCamera.mWorld.GetTranslation();
 	glm::vec3 camera_front = glm::normalize(mCamera.mWorld.GetFront());
 	glm::vec3 camera_right = glm::normalize(mCamera.mWorld.GetRight());
 	glm::vec3 camera_up = glm::normalize(mCamera.mWorld.GetUp());
 
-	float atmosphere_dimming = 0.001f;
+	float atmosphere_dimming = 0.0005f;
 
 	float terrain_scale = 0.007f;
 	int terrain_octaves = 12;
 	int binary_search_depth = 6;
 
-	int max_steps      = 800;
+	int   max_steps    = 1000;
 	float max_distance = 1000.0;
-	float min_step     = 0.025;
-	float max_step     = 2.5;
+	float min_step     = 0.100;
+	float max_step     = 2.500;
 
 	// -- Light Source Ranges 
 	float MIN_X = -100.0, MAX_X = 100.0;
@@ -174,7 +173,7 @@ edan35::TerrainGenerator::run()
 	glEnable(GL_CULL_FACE);
 
 
-	bool is_sun_moving = false;
+	bool is_sun_time_moving = false;
 	float sun_speed_degrees_per_second = 25.0f;
 	float sun_elevation_direction = 1.0f;
 
@@ -242,7 +241,7 @@ edan35::TerrainGenerator::run()
 				glm::sin(azimuth_radians) * glm::cos(elevation_radians)
 			));
 		}
-		if (is_sun_moving) {
+		if (is_sun_time_moving) {
 			float delta_time_s = std::chrono::duration<float>(deltaTimeUs).count();
 
 			elevation_degrees += sun_elevation_direction * sun_speed_degrees_per_second * delta_time_s;
@@ -279,13 +278,14 @@ edan35::TerrainGenerator::run()
 			}
 			ImGui::Separator();
 			ImGui::Text("Frame: %.3f ms (%.1f FPS)", dt_ms, fps);
+			ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)", camera_position.x, camera_position.y, camera_position.z);
 			ImGui::Separator();
 			ImGui::Text("Light & Sky");
 			ImGui::Checkbox("Use Light Position", &use_lighting_position);
 			ImGui::SliderFloat("Light X value", &light_position[0], MIN_X, MAX_X);
 			ImGui::SliderFloat("Light Y value", &light_position[1], MIN_Y, MAX_Y);
 			ImGui::SliderFloat("Light Z value", &light_position[2], MIN_Z, MAX_Z);
-			ImGui::Checkbox("Sun Moving", &is_sun_moving);
+			ImGui::Checkbox("Sun Moving", &is_sun_time_moving);
 			ImGui::SliderFloat("Sun azimuth (deg)", &azimuth_sun_degrees, 0.0f, 360.0f);
 			ImGui::SliderFloat("Sun elevation (deg)", &elevation_degrees, -5.0f, 90.0f);
 			ImGui::SliderFloat("Atmosphere dimming", &atmosphere_dimming, 0.0f, 0.008f);
@@ -294,7 +294,7 @@ edan35::TerrainGenerator::run()
 			ImGui::SliderFloat("Scaling", &terrain_scale, 0.004f, 0.012f);
 			ImGui::SliderInt("Octaves", &terrain_octaves, 1, 15);
 			ImGui::SliderInt("Binary Search", &binary_search_depth, 0, 10);
-			ImGui::SliderInt("Max Steps", &max_steps, 100, 1000);
+			ImGui::SliderInt("Max Steps", &max_steps, 100, 2000);
 			ImGui::SliderFloat("Max Distance", &max_distance, 100.0f, 4000.0f);
 			ImGui::SliderFloat("Min Step", &min_step, 0.0050f, 0.1000f);
 			ImGui::SliderFloat("Max Step", &max_step, 0.1f, 5.0f);
