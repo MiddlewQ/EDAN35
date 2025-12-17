@@ -97,41 +97,70 @@ edan35::TerrainGenerator::run()
 	if (water_shader == 0u)
 		LogError("Failed to load water shader");
 
-	glm::vec3 light_position = glm::vec3(0.0f, 50.0f, 0.0f);
+	// -- Uniforms 
+	bool use_lighting_position = true;
+	glm::vec3 light_position = glm::vec3(0.0f, 100.0f, 0.0f);
+
+	// Calculate light direction from azimuth and elevation
+	float azimuth_sun_degrees = 75.0f;
+	float elevation_degrees = 15.0f;
+	float azimuth_radians = glm::radians(azimuth_sun_degrees);
+	float elevation_radians = glm::radians(elevation_degrees);
+	glm::vec3 light_direction = glm::normalize(glm::vec3(
+		glm::cos(azimuth_radians) * glm::cos(elevation_radians),
+		glm::sin(elevation_radians),
+		glm::sin(azimuth_radians) * glm::cos(elevation_radians)
+	));
+
+
 	glm::vec3 camera_position = mCamera.mWorld.GetTranslation();
 	glm::vec3 camera_front = glm::normalize(mCamera.mWorld.GetFront());
 	glm::vec3 camera_right = glm::normalize(mCamera.mWorld.GetRight());
 	glm::vec3 camera_up = glm::normalize(mCamera.mWorld.GetUp());
-	int octaves = 12;
-	float atmosphere_dimming = 0.004f;
-	float terrain_scale = 0.006f;
-	int binary_search_depth = 3;
-	int max_steps = 800;
-	float max_distance = 500.0;
-	float max_step = 1.0;
 
-	// -- Create Light Source Indicator
+	float atmosphere_dimming = 0.001f;
+
+	float terrain_scale = 0.007f;
+	int terrain_octaves = 12;
+	int binary_search_depth = 6;
+
+	int max_steps      = 800;
+	float max_distance = 1000.0;
+	float min_step     = 0.025;
+	float max_step     = 2.5;
+
+	// -- Light Source Ranges 
 	float MIN_X = -100.0, MAX_X = 100.0;
 	float MIN_Y = 100.0, MAX_Y = 1000.0;
 	float MIN_Z = -100.0, MAX_Z = 100.0;
 
-	auto const set_uniforms = [&light_position, &camera_position, &camera_front, &camera_right, &camera_up, &octaves, &atmosphere_dimming, &binary_search_depth, &terrain_scale, &max_steps, &max_distance, &max_step](GLuint program) {
-		glUniform3fv(glGetUniformLocation(program, "light_position"), 1, glm::value_ptr(light_position));
-		glUniform3fv(glGetUniformLocation(program, "camera_position"), 1, glm::value_ptr(camera_position));
-		glUniform3fv(glGetUniformLocation(program, "camera_front"), 1, glm::value_ptr(camera_front));
-		glUniform3fv(glGetUniformLocation(program, "camera_right"), 1, glm::value_ptr(camera_right));
-		glUniform3fv(glGetUniformLocation(program, "camera_up"), 1, glm::value_ptr(camera_up));
-		glUniform1i(glGetUniformLocation(program, "octaves"), octaves);
-		glUniform1f(glGetUniformLocation(program, "atmosphere_dimming"), atmosphere_dimming);
-		glUniform1f(glGetUniformLocation(program, "terrain_scale"), terrain_scale);
-		glUniform1i(glGetUniformLocation(program, "binary_search_depth"), binary_search_depth);
-		glUniform1i(glGetUniformLocation(program, "max_steps"), max_steps);
-		glUniform1f(glGetUniformLocation(program, "max_distance"), max_distance);
-		glUniform1f(glGetUniformLocation(program, "max_step"), max_step);
-		};
+	auto const set_uniforms = [
+		&use_lighting_position, &light_position, &light_direction,
+		&camera_position, &camera_front, &camera_right, &camera_up,
+		&atmosphere_dimming,
+		&terrain_octaves, &binary_search_depth, &terrain_scale,
+		&max_steps, &max_distance,
+		&min_step, &max_step
+	] (GLuint program) {
+			glUniform1i(glGetUniformLocation(program, "use_lighting_position"), use_lighting_position);
+			glUniform3fv(glGetUniformLocation(program, "light_position"), 1, glm::value_ptr(light_position));
+			glUniform3fv(glGetUniformLocation(program, "light_direction"), 1, glm::value_ptr(light_direction));
+			glUniform3fv(glGetUniformLocation(program, "camera_position"), 1, glm::value_ptr(camera_position));
+			glUniform3fv(glGetUniformLocation(program, "camera_front"), 1, glm::value_ptr(camera_front));
+			glUniform3fv(glGetUniformLocation(program, "camera_right"), 1, glm::value_ptr(camera_right));
+			glUniform3fv(glGetUniformLocation(program, "camera_up"), 1, glm::value_ptr(camera_up));
+			glUniform1i(glGetUniformLocation(program, "octaves"), terrain_octaves);
+			glUniform1f(glGetUniformLocation(program, "atmosphere_dimming"), atmosphere_dimming);
+			glUniform1f(glGetUniformLocation(program, "terrain_scale"), terrain_scale);
+			glUniform1i(glGetUniformLocation(program, "binary_search_depth"), binary_search_depth);
+			glUniform1i(glGetUniformLocation(program, "max_steps"), max_steps);
+			glUniform1f(glGetUniformLocation(program, "max_distance"), max_distance);
+			glUniform1f(glGetUniformLocation(program, "min_step"), min_step);
+			glUniform1f(glGetUniformLocation(program, "max_step"), max_step);
+	};
 
 
-	//! Create Screen
+	// Create Screen
 	auto const fullscreen_quad = parametric_shapes::createQuad(1.0f, 1.0f, 1u, 1u);
 	auto ray_marching = Node();
 	ray_marching.set_geometry(fullscreen_quad);
@@ -144,17 +173,20 @@ edan35::TerrainGenerator::run()
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
 
+
+	bool is_sun_moving = false;
+	float sun_speed_degrees_per_second = 25.0f;
+	float sun_elevation_direction = 1.0f;
+
 	auto lastTime = std::chrono::high_resolution_clock::now();
 
 	std::int32_t program_index = 0;
-	float elapsed_time_s = 0.0f;
+
+
 	auto cull_mode = bonobo::cull_mode_t::disabled;
 	auto polygon_mode = bonobo::polygon_mode_t::fill;
 	bool show_logs = true;
 	bool show_gui = true;
-	bool show_basis = false;
-	float basis_thickness_scale = 1.0f;
-	float basis_length_scale = 1.0f;
 
 	changeCullMode(cull_mode);
 
@@ -169,7 +201,6 @@ edan35::TerrainGenerator::run()
 		glfwPollEvents();
 		inputHandler.Advance();
 		mCamera.Update(deltaTimeUs, inputHandler);
-		elapsed_time_s += std::chrono::duration<float>(deltaTimeUs).count();
 
 		if (inputHandler.GetKeycodeState(GLFW_KEY_F3) & JUST_RELEASED)
 			show_logs = !show_logs;
@@ -196,11 +227,37 @@ edan35::TerrainGenerator::run()
 		glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 		bonobo::changePolygonMode(polygon_mode);
 
-
 		camera_position = mCamera.mWorld.GetTranslation();
 		camera_front = glm::normalize(mCamera.mWorld.GetFront());
 		camera_right = glm::normalize(mCamera.mWorld.GetRight());
 		camera_up = glm::normalize(mCamera.mWorld.GetUp());
+
+		// Recalculate light_direction based on
+		if (!use_lighting_position) {
+			azimuth_radians = glm::radians(azimuth_sun_degrees);
+			elevation_radians = glm::radians(elevation_degrees);
+			light_direction = glm::normalize(glm::vec3(
+				glm::cos(azimuth_radians) * glm::cos(elevation_radians),
+				glm::sin(elevation_radians),
+				glm::sin(azimuth_radians) * glm::cos(elevation_radians)
+			));
+		}
+		if (is_sun_moving) {
+			float delta_time_s = std::chrono::duration<float>(deltaTimeUs).count();
+
+			elevation_degrees += sun_elevation_direction * sun_speed_degrees_per_second * delta_time_s;
+
+			if (elevation_degrees >= 90.0f) {
+				elevation_degrees = 90.0f;
+				azimuth_sun_degrees += azimuth_sun_degrees > 360.0f ? 180.0f : -180.0f;
+				sun_elevation_direction = -1.0f;
+			}
+			else if (elevation_degrees <= 0.0f) {
+				elevation_degrees = 0.0f;
+				sun_elevation_direction = 1.0f;
+			}
+		}
+
 
 		// Render Screen
 		ray_marching.render(mCamera.GetWorldToClipMatrix());
@@ -223,35 +280,31 @@ edan35::TerrainGenerator::run()
 			ImGui::Separator();
 			ImGui::Text("Frame: %.3f ms (%.1f FPS)", dt_ms, fps);
 			ImGui::Separator();
-			ImGui::Checkbox("Show basis", &show_basis);
-			ImGui::SliderFloat("Basis thickness scale", &basis_thickness_scale, 0.0f, 100.0f);
-			ImGui::SliderFloat("Basis length scale", &basis_length_scale, 0.0f, 100.0f);
-			ImGui::Separator();
 			ImGui::Text("Light & Sky");
+			ImGui::Checkbox("Use Light Position", &use_lighting_position);
 			ImGui::SliderFloat("Light X value", &light_position[0], MIN_X, MAX_X);
 			ImGui::SliderFloat("Light Y value", &light_position[1], MIN_Y, MAX_Y);
 			ImGui::SliderFloat("Light Z value", &light_position[2], MIN_Z, MAX_Z);
-			ImGui::SliderFloat("Atmosphere dimming", &atmosphere_dimming, 0.00025f, 0.008f);
+			ImGui::Checkbox("Sun Moving", &is_sun_moving);
+			ImGui::SliderFloat("Sun azimuth (deg)", &azimuth_sun_degrees, 0.0f, 360.0f);
+			ImGui::SliderFloat("Sun elevation (deg)", &elevation_degrees, -5.0f, 90.0f);
+			ImGui::SliderFloat("Atmosphere dimming", &atmosphere_dimming, 0.0f, 0.008f);
 			ImGui::Separator();
 			ImGui::Text("Terrain");
-			ImGui::SliderFloat("Scaling", &terrain_scale, 0.001f, 0.012f);
-			ImGui::SliderInt("Octaves", &octaves, 1, 15);
+			ImGui::SliderFloat("Scaling", &terrain_scale, 0.004f, 0.012f);
+			ImGui::SliderInt("Octaves", &terrain_octaves, 1, 15);
 			ImGui::SliderInt("Binary Search", &binary_search_depth, 0, 10);
 			ImGui::SliderInt("Max Steps", &max_steps, 100, 1000);
-			ImGui::SliderFloat("Max Distance", &max_distance, 100.0, 1000.0);
-			ImGui::SliderFloat("Max Step", &max_step, 0.1, 5.0);
-			ImGui::Separator();
-
-
-
+			ImGui::SliderFloat("Max Distance", &max_distance, 100.0f, 4000.0f);
+			ImGui::SliderFloat("Min Step", &min_step, 0.0050f, 0.1000f);
+			ImGui::SliderFloat("Max Step", &max_step, 0.1f, 5.0f);
 		}
 		ImGui::End();
 
 		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-		if (show_basis)
-			bonobo::renderBasis(basis_thickness_scale, basis_length_scale, mCamera.GetWorldToClipMatrix());
-		if (show_logs)
-			Log::View::Render();
+
+		//if (show_logs)
+			//Log::View::Render();
 		mWindowManager.RenderImGuiFrame(show_gui);
 
 		glfwSwapBuffers(window);

@@ -56,7 +56,7 @@ parametric_shapes::createQuad(float const width, float const height,
 		for (unsigned x = 0; x < vertical_split_count; ++x) {
 			index_sets[index] = glm::uvec3(
 				get_vertex_idx(x, z),
-				get_vertex_idx(x, z + 1),
+				get_vertex_idx(x + 1, z),
 				get_vertex_idx(x + 1, z + 1)
 			);
 			++index;
@@ -64,7 +64,7 @@ parametric_shapes::createQuad(float const width, float const height,
 			index_sets[index] = glm::uvec3(
 				get_vertex_idx(x, z),
 				get_vertex_idx(x + 1, z + 1),
-				get_vertex_idx(x + 1, z)
+				get_vertex_idx(x, z + 1)
 			);
 			++index;
 		}
