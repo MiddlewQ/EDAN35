@@ -27,9 +27,11 @@ uniform float max_step;
 
 const float terrain_base_y = 50.0;
 const float terrain_amplitude = 80.0;
-const float sea_level = 20.0;
-const float grass_level = 30.0;
+
+const float cloud_level = 150.0;
 const float snow_level = 50.0;
+const float grass_level = 30.0;
+const float sea_level = 20.0;
 
 in VS_OUT {
     vec2 texcoord;
@@ -110,6 +112,12 @@ float fbm(vec2 pos) {
 }
 
 
+/*
+float fbm_t(vec2 pos, float t) {
+    float far_factor = smoothstep(40.0, 700.0, t);
+    return fbm_lod(pos, far_factor);
+}
+*/
 
 // Fractional Brownian Motion
 float fbm_t(vec2 pos, float t) {
@@ -118,47 +126,23 @@ float fbm_t(vec2 pos, float t) {
     float freq = 1.0;
     float amplitude_sum = 0.0;
 
-	float amplitude_sum_full = 0.0;
-    {
-        float a = 1.0;
-        for (int octave_index = 0; octave_index < octaves; ++octave_index) {
-            amplitude_sum_full += a;
-            a *= 0.5;
-        }
-    }
-
-    int min_octaves = 6;
-    int max_octaves = max(min_octaves, octaves); 
-
-    const mat2 rotation_matrix = mat2(
-        4.0/5.0, 3.0/5.0,
-        -3.0/5.0, 4.0/5.0
-    );
     mat2 current_matrix = mat2(1.0);
+	const mat2 rotation_matrix = mat2(4.0/5.0, 3.0/5.0, -3.0/5.0, 4.0/5.0);	
 
-    float far_factor = smoothstep(300.0, 600.0, t); // start fixing at 300m
-	
-    // Modify octaves based on t (travel distance)
     int octave_count = octaves;
-
-	far_factor = smoothstep(40.0, 700.0, t); // remap at
-	//far_factor = far_factor * far_factor;
-
     for (int octave_idx = 0; octave_idx < octave_count; ++octave_idx) {
-		float high_octave = smoothstep(5.0, float(octaves - 1), float(octave_idx));
-		float octave_weight = 1.0 - far_factor * high_octave;
 
 		float noise_value = value_noise(pos * freq * current_matrix);
 
-		sum += noise_value * amplitude * octave_weight;
-        amplitude_sum += amplitude * octave_weight;
+		sum += noise_value * amplitude;
+        amplitude_sum += amplitude;
 
         // New matrix for next octave (high frequency & lower amplitude, rotated)
         freq *= 2.0;   
         amplitude *= 0.5;
         current_matrix *= rotation_matrix;
     }
-    return sum / amplitude_sum_full; 
+    return sum / amplitude_sum; 
 }
 
 
@@ -185,12 +169,12 @@ vec3 sky_color(vec3 ray_origin_world, vec3 ray_direction_world)
     vec3 color = vec3(0.42,0.62,1.1) - ray_direction_world.y*0.4;
 
     // clouds
-    float travel_distance = (150.0 - ray_origin_world.y) / ray_direction_world.y;
+    float travel_distance = (cloud_level - ray_origin_world.y) / ray_direction_world.y;
 
     if(travel_distance > 0.0) {
         vec2 position_xz = (ray_origin_world + travel_distance * ray_direction_world).xz;
 
-        float cl = fbm(position_xz * 0.007);
+        float cl = fbm_t(position_xz * 0.007, travel_distance);
         float dl = smoothstep(0.25, 0.6, cl);
         color = mix(color, vec3(1.0), 0.50 * dl);
     }
@@ -198,7 +182,7 @@ vec3 sky_color(vec3 ray_origin_world, vec3 ray_direction_world)
     vec3 sun_direction_world =
         use_lighting_position
             ? normalize(light_position - ray_origin_world)   // camera->light
-            : normalize(light_direction);                     // camera->sun direction
+            : normalize(light_direction);                    // camera->sun direction
 
     float alignment = dot(ray_direction_world, sun_direction_world);
 
@@ -268,7 +252,7 @@ float terrain_height_t(vec2 plane, float t) {
 
 
 vec3 terrain_normal(vec3 world_position, float t) {
-    float epsilon = 0.03;
+    float epsilon = max(0.2, 0.002 * t);
 
     vec2 plane = world_position.xz;
 
@@ -295,7 +279,7 @@ float terrain_shadow(vec3 ray_origin, vec3 ray_direction, float max_distance_to_
 
     const int max_shadow_steps = 64;
 
-    float max_shadow_distance = max_distance_to_light;
+    float max_shadow_distance = 500.0;
 
     if (max_shadow_distance <= 1e-4)
         return 1.0;
@@ -339,21 +323,25 @@ bool terrain_raymarch(
     vec3 ray_direction,
     out float hit_distance)
 {
-    int max_steps_count      = max_steps;
+    int max_steps_count      = max_steps; 
     float max_trace_distance = max_distance;
     float min_step_distance  = min_step;
     float max_step_distance  = max_step;
 
     // Raymarch t (travel_distance)
     float travel_distance = min_step_distance;
+	float prev_travel_distance = 0.0;
+    float prev_height_delta = ray_origin.y - terrain_height_t(ray_origin.xz, 0); // Used when using linear interpolation instead of binary search
 
     // If ray is above highest terrain, limit max distance (or return early)
     // Massive improvements looking at the sky (reduce unnecessary rays)
     const float terrain_max_y = 130.0;
     if (ray_direction.y > 0.0) {
         float t_to_ceiling_along_ray = (terrain_max_y - ray_origin.y) / ray_direction.y;
-        if (t_to_ceiling_along_ray <= 0.0)
+        if (t_to_ceiling_along_ray <= 0.0) {
+			hit_distance = max_trace_distance;
             return false;
+		}
         max_trace_distance = min(max_trace_distance, t_to_ceiling_along_ray);
     }
 
@@ -365,10 +353,9 @@ bool terrain_raymarch(
         travel_distance = max(travel_distance, t_to_ceiling_along_ray);
     }
 
+
     // If we start inside terrain:
-    float prev_travel_distance = 0.0;
-    float prev_height_above = ray_origin.y - terrain_height_t(ray_origin.xz, 0);
-    if (prev_height_above < 0.0) {
+    if (prev_height_delta < 0.0) {
         hit_distance = 0.0;
         return true;
     }
@@ -380,9 +367,9 @@ bool terrain_raymarch(
         vec3 position      = ray_origin + travel_distance * ray_direction;
         float terrain_h    = terrain_height_t(position.xz, travel_distance);
         float height_delta = position.y - terrain_h;
+		
 
-
-        float epsilon = 1e-4 * travel_distance;   
+		float epsilon = max(1e-4, 1e-4 * travel_distance);
         if (height_delta < epsilon) {
             // Locally refine height value to prevent wobble
 
@@ -390,7 +377,7 @@ bool terrain_raymarch(
             float t_max = travel_distance;
 
             // Binary search using X iterations
-            for (int j = 0; j < binary_search_depth; ++j) {
+			for (int j = 0; j < binary_search_depth; ++j) {
                 float t_mid = 0.5 * (t_min + t_max);
                 vec3 mid_pos = ray_origin + t_mid * ray_direction;
                 float mid_height = terrain_height_t(mid_pos.xz, t_mid);
@@ -398,20 +385,24 @@ bool terrain_raymarch(
 
                 if (mid_delta > 0.0) 
                     t_min = t_mid;
-                else
-                    t_max = t_mid; 
-            }
+                else 
+                    t_max = t_mid;
 
-            hit_distance = 0.5 * (t_min + t_max);
+				if (t_max - t_min < 0.01)
+					break;
+            }
+			hit_distance = 0.5 * (t_min + t_max);
+			//float alpha = prev_height_delta / (prev_height_delta - height_delta);
+            //hit_distance = travel_distance + (travel_distance - prev_travel_distance ) * alpha;
             return true;
         }    
         prev_travel_distance = travel_distance;
-
+		prev_height_delta = height_delta;
         float abs_ray_dir_y = abs(ray_direction.y);
         float travel_distance_to_surface = height_delta / max(abs_ray_dir_y, 0.002);
 
-        float distance_factor = smoothstep(200.0, 2000.0, travel_distance); // 0 near, 1 far
-        float step_scale      = mix(0.2, 0.8, distance_factor);
+        float distance_factor = smoothstep(10.0, 1000.0, travel_distance); // 0 near, 1 far
+        float step_scale      = mix(0.1, 0.8, distance_factor);
         float dt_raw          = travel_distance_to_surface * step_scale;
         float dt              = clamp(dt_raw, min_step_distance, max_step_distance);
 
@@ -483,7 +474,7 @@ void main() {
 
 
     // Shadow Ray
-    vec3 shadow_origin_world = hit_info.hit_point_world + hit_info.normal_world * 0.1;     // Move shadow slightly
+    vec3 shadow_origin_world = hit_info.hit_point_world + hit_info.normal_world * 0.5;     // Move shadow slightly
     Ray shadow_ray;
     shadow_ray.origin_world = shadow_origin_world;
     shadow_ray.direction_world = light_direction_world;

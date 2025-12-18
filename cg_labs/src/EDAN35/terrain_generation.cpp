@@ -98,12 +98,12 @@ edan35::TerrainGenerator::run()
 		LogError("Failed to load water shader");
 
 	// -- Uniforms 
-	bool use_lighting_position = false;
+	bool use_lighting_position = true;
 	glm::vec3 light_position = glm::vec3(0.0f, 100.0f, 0.0f);
 
 	// Calculate light direction from azimuth and elevation
 	float azimuth_sun_degrees = 75.0f;
-	float elevation_degrees = 15.0f;
+	float elevation_degrees = 20.0f;
 	float azimuth_radians = glm::radians(azimuth_sun_degrees);
 	float elevation_radians = glm::radians(elevation_degrees);
 	glm::vec3 light_direction = glm::normalize(glm::vec3(
@@ -190,16 +190,16 @@ edan35::TerrainGenerator::run()
 	changeCullMode(cull_mode);
 
 	while (!glfwWindowShouldClose(window)) {
-		auto const nowTime = std::chrono::high_resolution_clock::now();
-		auto const deltaTimeUs = std::chrono::duration_cast<std::chrono::microseconds>(nowTime - lastTime);
-		lastTime = nowTime;
+		auto const now = std::chrono::high_resolution_clock::now();
+		auto const delta_time_us = std::chrono::duration_cast<std::chrono::microseconds>(now - lastTime);
+		lastTime = now;
 
 		auto& io = ImGui::GetIO();
 		inputHandler.SetUICapture(io.WantCaptureMouse, io.WantCaptureKeyboard);
 
 		glfwPollEvents();
 		inputHandler.Advance();
-		mCamera.Update(deltaTimeUs, inputHandler);
+		mCamera.Update(delta_time_us, inputHandler);
 
 		if (inputHandler.GetKeycodeState(GLFW_KEY_F3) & JUST_RELEASED)
 			show_logs = !show_logs;
@@ -231,7 +231,17 @@ edan35::TerrainGenerator::run()
 		camera_right = glm::normalize(mCamera.mWorld.GetRight());
 		camera_up = glm::normalize(mCamera.mWorld.GetUp());
 
-		// Recalculate light_direction based on
+
+		// -- Time calculations
+		const auto delta_microseconds = delta_time_us.count();
+		const float delta_time_seconds = static_cast<float>(delta_microseconds) * 1e-6f;
+		const float delta_time_milliseconds = static_cast<float>(delta_microseconds) * 1e-3f;
+
+		const float frames_per_second =
+			(delta_microseconds > 0)
+			? (1e6f / static_cast<float>(delta_microseconds))
+			: 0.0f;
+
 		if (!use_lighting_position) {
 			azimuth_radians = glm::radians(azimuth_sun_degrees);
 			elevation_radians = glm::radians(elevation_degrees);
@@ -241,14 +251,14 @@ edan35::TerrainGenerator::run()
 				glm::sin(azimuth_radians) * glm::cos(elevation_radians)
 			));
 		}
+
+		// For Light Direction
 		if (is_sun_time_moving) {
-			float delta_time_s = std::chrono::duration<float>(deltaTimeUs).count();
-
-			elevation_degrees += sun_elevation_direction * sun_speed_degrees_per_second * delta_time_s;
-
+			elevation_degrees += sun_elevation_direction * sun_speed_degrees_per_second * delta_time_seconds;
+			// Simple sun movement model: reverse direction when reaching zenith or horizon
 			if (elevation_degrees >= 90.0f) {
 				elevation_degrees = 90.0f;
-				azimuth_sun_degrees += azimuth_sun_degrees > 360.0f ? 180.0f : -180.0f;
+				azimuth_sun_degrees += (azimuth_sun_degrees + 180.0f) <= 360.0f ? 180.0f : -180.0f;
 				sun_elevation_direction = -1.0f;
 			}
 			else if (elevation_degrees <= 0.0f) {
@@ -257,13 +267,9 @@ edan35::TerrainGenerator::run()
 			}
 		}
 
-
 		// Render Screen
 		ray_marching.render(mCamera.GetWorldToClipMatrix());
 
-
-		float dt_ms = std::chrono::duration<float, std::milli>(deltaTimeUs).count();
-		float fps = (dt_ms > 0.0f) ? 1000.0f / dt_ms : 0.0f;
 
 		bool const opened = ImGui::Begin("Scene Controls", nullptr, ImGuiWindowFlags_None);
 		if (opened) {
@@ -277,7 +283,7 @@ edan35::TerrainGenerator::run()
 				ray_marching.set_program(selection_result.program, set_uniforms);
 			}
 			ImGui::Separator();
-			ImGui::Text("Frame: %.3f ms (%.1f FPS)", dt_ms, fps);
+			ImGui::Text("Frame: %.3f ms (%.1f FPS)", delta_time_milliseconds, frames_per_second);
 			ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)", camera_position.x, camera_position.y, camera_position.z);
 			ImGui::Separator();
 			ImGui::Text("Light & Sky");
