@@ -33,6 +33,10 @@ const float snow_level = 50.0;
 const float grass_level = 30.0;
 const float sea_level = 20.0;
 
+
+const float grass_fade_height = 8.0;
+const float snow_fade_height = 15.0;
+
 in VS_OUT {
     vec2 texcoord;
 } fs_in;
@@ -252,7 +256,7 @@ float terrain_height_t(vec2 plane, float t) {
 
 
 vec3 terrain_normal(vec3 world_position, float t) {
-    float epsilon = max(0.2, 0.002 * t);
+    float epsilon = max(0.1, 0.0035 * t);
 
     vec2 plane = world_position.xz;
 
@@ -273,6 +277,11 @@ vec3 terrain_normal(vec3 world_position, float t) {
 float terrain_diffuse(vec3 light_dir, vec3 normals) {
     float NdotL = dot(normals, light_dir);
     return max(NdotL, 0.0);
+}
+
+float terrain_specular(vec3 light_dir, vec3 camera_dir, vec3 normals, float specular_factor, float alpha) {
+	float RdotV = max(dot(reflect(-light_dir, normals), camera_dir), 0.0);
+	return specular_factor * pow(RdotV, alpha);
 }
 
 float terrain_shadow(vec3 ray_origin, vec3 ray_direction, float max_distance_to_light) {
@@ -335,7 +344,7 @@ bool terrain_raymarch(
 
     // If ray is above highest terrain, limit max distance (or return early)
     // Massive improvements looking at the sky (reduce unnecessary rays)
-    const float terrain_max_y = 130.0;
+    const float terrain_max_y = terrain_base_y + terrain_amplitude;
     if (ray_direction.y > 0.0) {
         float t_to_ceiling_along_ray = (terrain_max_y - ray_origin.y) / ray_direction.y;
         if (t_to_ceiling_along_ray <= 0.0) {
@@ -398,10 +407,11 @@ bool terrain_raymarch(
         }    
         prev_travel_distance = travel_distance;
 		prev_height_delta = height_delta;
-        float abs_ray_dir_y = abs(ray_direction.y);
-        float travel_distance_to_surface = height_delta / max(abs_ray_dir_y, 0.002);
 
-        float distance_factor = smoothstep(10.0, 1000.0, travel_distance); // 0 near, 1 far
+        float abs_ray_dir_y = abs(ray_direction.y);
+        float travel_distance_to_surface = height_delta / max(abs_ray_dir_y, 0.1);
+
+        float distance_factor = smoothstep(50.0, 1000.0, travel_distance); // 0 near, 1 far
         float step_scale      = mix(0.1, 0.8, distance_factor);
         float dt_raw          = travel_distance_to_surface * step_scale;
         float dt              = clamp(dt_raw, min_step_distance, max_step_distance);
@@ -480,27 +490,59 @@ void main() {
     shadow_ray.direction_world = light_direction_world;
 
 
-    // Lighting Terms
-    float ambient = 0.2;
-    float diffuse = terrain_diffuse(light_direction_world, hit_info.normal_world);
-    float shadow  = terrain_shadow(shadow_ray.origin_world, shadow_ray.direction_world, max_distance_to_light);
-    float light_term = ambient + diffuse * shadow;
 
-    // Material
+
+    // -- Terrain Colors
     vec3 water_color = vec3(0.0, 0.3, 0.7);
     vec3 atmosphere_color = vec3(0.8);
-    vec3 snow_color = vec3(1.0);
-    
-    vec3 rock_color = vec3(228.0/255.0, 172.0/255.0, 155.0/255.0);
+
     vec3 grass_color = vec3(0.51, 0.51, 0.05);
+    vec3 rock_color = vec3(228.0/255.0, 172.0/255.0, 155.0/255.0);
+    vec3 snow_color = vec3(1.0);
 
-    float grass_flat_surface_factor = smoothstep(0.6, 0.7, hit_info.normal_world.y);
-    float grass_low_altitude_factor = smoothstep(snow_level*1.05, grass_level, hit_info.hit_point_world.y);
-    vec3 terrain_base_color = mix(rock_color, grass_color, grass_flat_surface_factor * grass_low_altitude_factor);
+	float height = hit_info.hit_point_world.y;
+	float upness = hit_info.normal_world.y;
 
-    float snow_blend = smoothstep(snow_level*0.95, 70.0, hit_info.hit_point_world.y);
-    terrain_base_color = mix(terrain_base_color, snow_color, snow_blend);
 
+
+    float grass_blend_flat = smoothstep(0.7, 0.8, upness);
+    float grass_blend_height = 1.0 - smoothstep(grass_level - grass_fade_height,
+									            grass_level + grass_fade_height,
+												height);
+	float grass_blend = grass_blend_flat * grass_blend_height;
+
+    vec3 rock_grass_color = mix(rock_color, grass_color, grass_blend);
+
+    float snow_blend = smoothstep(snow_level - snow_fade_height,
+								  snow_level + snow_fade_height,
+								  height);
+    vec3 terrain_base_color = mix(rock_grass_color, snow_color, snow_blend);
+
+	// -- Lighting Terms
+    float ambient = 0.2;
+    float diffuse = terrain_diffuse(light_direction_world, hit_info.normal_world);
+
+	// -- Specular
+	float spec = 0.4;
+	float w_snow  = snow_blend;
+    float w_grass = (1.0 - snow_blend) * grass_blend;
+    float w_rock  = (1.0 - snow_blend) * (1.0 - grass_blend);
+
+	float alpha_rock  = 60.0;
+    float alpha_grass = 12.0;
+    float alpha_snow  = 25.0;
+
+    float ks_grass = 0.04;
+	float ks_rock  = 0.07;
+    float ks_snow  = 0.40; // packed snow; icy patches maybe higher
+
+    float specular_factor = w_rock*ks_rock + w_grass*ks_grass + w_snow*ks_snow;
+	float alpha = w_rock*alpha_rock + w_grass*alpha_grass + w_snow*alpha_snow;
+
+	float specular = terrain_specular(light_direction_world, view_ray.direction_world, hit_info.normal_world, specular_factor, alpha);
+    float shadow  = terrain_shadow(shadow_ray.origin_world, shadow_ray.direction_world, max_distance_to_light);
+
+    float light_term = ambient + (diffuse + specular) * shadow;
 
     // -- Combine
     color = (hit_info.hit_point_world.y > sea_level) ? terrain_base_color : water_color;
