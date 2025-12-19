@@ -72,31 +72,6 @@ edan35::TerrainGenerator::run()
 		LogError("Failed to load ray_marching shader");
 
 
-
-	GLuint texcoord_shader = 0u;
-	program_manager.CreateAndRegisterProgram("Texcoord",
-		{ { ShaderType::vertex, "common/fullscreen.vert" },
-		  { ShaderType::fragment, "EDAF80/texcoord.frag" } },
-		texcoord_shader);
-	if (texcoord_shader == 0u)
-		LogError("Failed to load texcoord shader");
-
-	GLuint terrain_shader = 0u;
-	program_manager.CreateAndRegisterProgram("Terrian",
-		{ { ShaderType::vertex, "EDAN35/terrain.vert" },
-		  { ShaderType::fragment, "EDAN35/terrain.frag"} },
-		terrain_shader);
-	if (terrain_shader == 0u)
-		LogError("Failed to load water shader");
-
-	GLuint water_shader = 0u;
-	program_manager.CreateAndRegisterProgram("Water coords",
-		{ { ShaderType::vertex, "EDAF80/water.vert" },
-		  { ShaderType::fragment, "EDAF80/water.frag"} },
-		water_shader);
-	if (water_shader == 0u)
-		LogError("Failed to load water shader");
-
 	// -- Uniforms 
 	bool use_lighting_position = true;
 	glm::vec3 light_position = glm::vec3(0.0f, 100.0f, 0.0f);
@@ -160,7 +135,7 @@ edan35::TerrainGenerator::run()
 
 
 	// Create Screen
-	auto const fullscreen_quad = parametric_shapes::createQuad(1.0f, 1.0f, 1u, 1u);
+	auto const fullscreen_quad = parametric_shapes::createQuad(0.0f, 0.0f, 1u, 1u);
 	auto ray_marching = Node();
 	ray_marching.set_geometry(fullscreen_quad);
 	ray_marching.set_program(&ray_marching_shader, set_uniforms);
