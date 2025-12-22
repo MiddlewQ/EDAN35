@@ -25,17 +25,22 @@ uniform float max_distance;
 uniform float min_step;
 uniform float max_step;
 
+
 const float terrain_base_y = 50.0;
 const float terrain_amplitude = 80.0;
 
 const float cloud_level = 150.0;
 const float snow_level = 50.0;
-const float grass_level = 30.0;
+const float grass_level = 35.0;
 const float sea_level = 20.0;
-
 
 const float grass_fade_height = 8.0;
 const float snow_fade_height = 15.0;
+
+const float step_lod_near_distance = 50.0;
+const float step_lod_mid_distance = 1000.0;
+const float step_lod_far_distance = 5000.0;
+
 
 in VS_OUT {
     vec2 texcoord;
@@ -245,7 +250,7 @@ float terrain_height_lod(vec2 plane, float travel_distance) {
 */
 
 float terrain_height(vec2 plane) {
-    float n = fbm(plane * terrain_scale) * 2.0 - 1; // [-1, 1]
+    float n = fbm(plane * terrain_scale) * 2.0 - 1.0; // [-1, 1]
     return n * terrain_amplitude + terrain_base_y;
 }
 
@@ -257,6 +262,7 @@ float terrain_height_t(vec2 plane, float t) {
 
 vec3 terrain_normal(vec3 world_position, float t) {
     float epsilon = max(0.1, 0.0035 * t);
+	epsilon = min(epsilon, 10.0);
 
     vec2 plane = world_position.xz;
 
@@ -286,9 +292,9 @@ float terrain_specular(vec3 light_dir, vec3 camera_dir, vec3 normals, float spec
 
 float terrain_shadow(vec3 ray_origin, vec3 ray_direction, float max_distance_to_light) {
 
-    const int max_shadow_steps = 64;
+    const int max_shadow_steps = 100;
 
-    float max_shadow_distance = 500.0;
+    float max_shadow_distance = min(max_distance_to_light, 250.0);
 
     if (max_shadow_distance <= 1e-4)
         return 1.0;
@@ -378,7 +384,7 @@ bool terrain_raymarch(
         float height_delta = position.y - terrain_h;
 		
 
-		float epsilon = max(1e-4, 1e-4 * travel_distance);
+		float epsilon = max(1e-3, 1e-4 * travel_distance);
         if (height_delta < epsilon) {
             // Locally refine height value to prevent wobble
 
@@ -411,8 +417,16 @@ bool terrain_raymarch(
         float abs_ray_dir_y = abs(ray_direction.y);
         float travel_distance_to_surface = height_delta / max(abs_ray_dir_y, 0.1);
 
-        float distance_factor = smoothstep(50.0, 1000.0, travel_distance); // 0 near, 1 far
-        float step_scale      = mix(0.1, 0.8, distance_factor);
+        float near_to_mid = smoothstep(step_lod_near_distance, step_lod_mid_distance, travel_distance);
+		float mid_to_far  = smoothstep(step_lod_mid_distance, step_lod_far_distance, travel_distance);
+
+		float step_scale_near = 0.1;
+        float step_scale_mid  = 0.8;
+        float step_scale_far  = 1.4;
+
+        float step_scale      = mix(step_scale_near, step_scale_mid, near_to_mid);
+		step_scale            = mix(step_scale, step_scale_far, mid_to_far);
+
         float dt_raw          = travel_distance_to_surface * step_scale;
         float dt              = clamp(dt_raw, min_step_distance, max_step_distance);
 
@@ -505,7 +519,7 @@ void main() {
 
 
 
-    float grass_blend_flat = smoothstep(0.7, 0.8, upness);
+    float grass_blend_flat = smoothstep(0.6, 0.7, upness);
     float grass_blend_height = 1.0 - smoothstep(grass_level - grass_fade_height,
 									            grass_level + grass_fade_height,
 												height);
@@ -542,10 +556,10 @@ void main() {
 	float specular = terrain_specular(light_direction_world, view_ray.direction_world, hit_info.normal_world, specular_factor, alpha);
     float shadow  = terrain_shadow(shadow_ray.origin_world, shadow_ray.direction_world, max_distance_to_light);
 
-    float light_term = ambient + (diffuse + specular) * shadow;
+    float light_term = ambient + (diffuse) * shadow;
 
     // -- Combine
-    color = (hit_info.hit_point_world.y > sea_level) ? terrain_base_color : water_color;
+    color = hit_info.hit_point_world.y > sea_level ? terrain_base_color : water_color;
     color *= light_term;
     color = mix(atmosphere_color, color, atmosphere_mixer(hit_info.hit_distance));
 

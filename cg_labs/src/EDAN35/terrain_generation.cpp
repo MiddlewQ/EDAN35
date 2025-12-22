@@ -93,11 +93,11 @@ edan35::TerrainGenerator::run()
 	glm::vec3 camera_up = glm::normalize(mCamera.mWorld.GetUp());
 
 	float atmosphere_dimming = 0.0005f;
+	
 
 	float terrain_scale = 0.007f;
 	int terrain_octaves = 12;
 	int binary_search_depth = 6;
-
 	int   max_steps    = 1000;
 	float max_distance = 1000.0;
 	float min_step     = 0.100;
@@ -147,7 +147,7 @@ edan35::TerrainGenerator::run()
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
 
-
+	bool teleport_to_50k = false;
 	bool is_sun_time_moving = false;
 	float sun_speed_degrees_per_second = 25.0f;
 	float sun_elevation_direction = 1.0f;
@@ -227,6 +227,11 @@ edan35::TerrainGenerator::run()
 			));
 		}
 
+		if (teleport_to_50k) {
+			mCamera.mWorld.SetTranslate(glm::vec3(5e5f, 300.0f, 5e5f));
+			teleport_to_50k = false;
+
+		}
 		// For Light Direction
 		if (is_sun_time_moving) {
 			elevation_degrees += sun_elevation_direction * sun_speed_degrees_per_second * delta_time_seconds;
@@ -260,6 +265,8 @@ edan35::TerrainGenerator::run()
 			ImGui::Separator();
 			ImGui::Text("Frame: %.3f ms (%.1f FPS)", delta_time_milliseconds, frames_per_second);
 			ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)", camera_position.x, camera_position.y, camera_position.z);
+			ImGui::Checkbox("Teleport to 50k", &teleport_to_50k);
+
 			ImGui::Separator();
 			ImGui::Text("Light & Sky");
 			ImGui::Checkbox("Use Light Position", &use_lighting_position);
@@ -276,9 +283,9 @@ edan35::TerrainGenerator::run()
 			ImGui::SliderInt("Octaves", &terrain_octaves, 1, 15);
 			ImGui::SliderInt("Binary Search", &binary_search_depth, 0, 10);
 			ImGui::SliderInt("Max Steps", &max_steps, 100, 2000);
-			ImGui::SliderFloat("Max Distance", &max_distance, 100.0f, 4000.0f);
+			ImGui::SliderFloat("Max Distance", &max_distance, 1000.0f, 1e5f);
 			ImGui::SliderFloat("Min Step", &min_step, 0.0050f, 0.1000f);
-			ImGui::SliderFloat("Max Step", &max_step, 0.1f, 5.0f);
+			ImGui::SliderFloat("Max Step", &max_step, 0.1f, 20.0f);
 		}
 		ImGui::End();
 
